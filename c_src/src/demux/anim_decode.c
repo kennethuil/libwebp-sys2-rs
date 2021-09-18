@@ -45,11 +45,6 @@ struct WebPAnimDecoder {
                                    // (starting from 1).
 };
 
-static void DefaultDecoderOptions(WebPAnimDecoderOptions* const dec_options) {
-  dec_options->color_mode = MODE_RGBA;
-  dec_options->use_threads = 0;
-}
-
 int WebPAnimDecoderOptionsInitInternal(WebPAnimDecoderOptions* dec_options,
                                        int abi_version) {
   if (dec_options == NULL ||

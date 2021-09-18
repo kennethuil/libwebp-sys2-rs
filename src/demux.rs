@@ -287,6 +287,20 @@ pub unsafe extern "C" fn WebPAnimDecoderNew(
     WebPAnimDecoderNewInternal(webp_data, dec_options, WEBP_DEMUX_ABI_VERSION)
 }
 
+#[cfg(feature = "0_5")]
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[allow(non_snake_case)]
+#[no_mangle]
+pub unsafe extern "C" fn DefaultDecoderOptions(
+    dec_options: *mut WebPAnimDecoderOptions
+) {
+    (*dec_options).color_mode = MODE_RGBA;
+    (*dec_options).use_threads = 0;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
