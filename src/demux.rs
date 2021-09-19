@@ -1,5 +1,6 @@
 use std::os::raw::*;
 use std::ptr;
+use std::ptr::null_mut;
 
 #[cfg(feature = "0_5")]
 use crate::decode::*;
@@ -196,13 +197,6 @@ extern "C" {
         doc(cfg(all(feature = "demux", feature = "0_5")))
     )]
     #[doc(hidden)]
-    pub fn WebPAnimDecoderOptionsInitInternal(_: *mut WebPAnimDecoderOptions, _: c_int) -> c_int;
-    #[cfg(feature = "0_5")]
-    #[cfg_attr(
-        feature = "__doc_cfg",
-        doc(cfg(all(feature = "demux", feature = "0_5")))
-    )]
-    #[doc(hidden)]
     pub fn WebPAnimDecoderNewInternal(
         _: *const WebPData,
         _: *const WebPAnimDecoderOptions,
@@ -277,7 +271,11 @@ pub unsafe extern "C" fn WebPDemuxPartial(
 pub unsafe extern "C" fn WebPAnimDecoderOptionsInit(
     dec_options: *mut WebPAnimDecoderOptions,
 ) -> c_int {
-    WebPAnimDecoderOptionsInitInternal(dec_options, WEBP_DEMUX_ABI_VERSION)
+    if dec_options == null_mut() {
+      return 0;
+    }
+    DefaultDecoderOptions(dec_options);
+    return 1;
 }
 
 #[cfg(feature = "0_5")]
