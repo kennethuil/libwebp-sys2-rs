@@ -88,14 +88,7 @@ pub struct WebPChunkIterator {
     pub private_: *mut c_void,
 }
 
-#[cfg(all(feature = "0_5", feature = "extern-types"))]
-extern "C" {
-    #[cfg_attr(
-        feature = "__doc_cfg",
-        doc(cfg(all(feature = "demux", feature = "0_5")))
-    )]
-    pub type WebPAnimDecoder;
-}
+type BlendRowFunc = unsafe extern "C" fn(*mut u32, *const u32, c_int);
 
 #[cfg(all(feature = "0_5", not(feature = "extern-types")))]
 #[cfg_attr(
@@ -103,7 +96,21 @@ extern "C" {
     doc(cfg(all(feature = "demux", feature = "0_5")))
 )]
 #[repr(C)]
-pub struct WebPAnimDecoder(c_void);
+pub struct WebPAnimDecoder {
+    demux_: *mut WebPDemuxer,             // Demuxer created from given WebP bitstream.
+    config_: WebPDecoderConfig,       // Decoder config.
+    // Note: we use a pointer to a function blending multiple pixels at a time to
+    // allow possible inlining of per-pixel blending function.
+    blend_func_: BlendRowFunc,        // Pointer to the chose blend row function.
+    info_: WebPAnimInfo,              // Global info about the animation.
+    curr_frame_: *mut u8,            // Current canvas (not disposed).
+    prev_frame_disposed_: *mut u8,   // Previous canvas (properly disposed).
+    prev_frame_timestamp_: c_int,       // Previous frame timestamp (milliseconds).
+    prev_iter_: WebPIterator,         // Iterator object for previous frame.
+    prev_frame_was_keyframe_: c_int,    // True if previous frame was a keyframe.
+    next_frame_: c_int,                 // Index of the next frame to be decoded
+                                     // (starting from 1).
+}
 
 #[cfg(feature = "0_5")]
 #[cfg_attr(
