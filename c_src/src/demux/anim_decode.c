@@ -421,11 +421,6 @@ int WebPAnimDecoderGetNext(WebPAnimDecoder* dec,
   return 0;
 }
 
-int WebPAnimDecoderHasMoreFrames(const WebPAnimDecoder* dec) {
-  if (dec == NULL) return 0;
-  return (dec->next_frame_ <= (int)dec->info_.frame_count);
-}
-
 void WebPAnimDecoderReset(WebPAnimDecoder* dec) {
   if (dec != NULL) {
     dec->prev_frame_timestamp_ = 0;

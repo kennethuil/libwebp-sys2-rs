@@ -5,6 +5,7 @@ use std::ptr::null_mut;
 #[cfg(feature = "0_5")]
 use crate::decode::*;
 use crate::mux_types::*;
+use std::convert::TryInto;
 
 #[cfg_attr(feature = "__doc_cfg", doc(cfg(feature = "demux")))]
 pub const WEBP_DEMUX_ABI_VERSION: c_int = WEBP_DEMUX_ABI_VERSION_INTERNAL;
@@ -91,7 +92,6 @@ pub struct WebPChunkIterator {
 
 type BlendRowFunc = unsafe extern "C" fn(*mut u32, *const u32, c_int);
 
-#[cfg(all(feature = "0_5", not(feature = "extern-types")))]
 #[cfg_attr(
     feature = "__doc_cfg",
     doc(cfg(all(feature = "demux", feature = "0_5")))
@@ -223,12 +223,6 @@ extern "C" {
         feature = "__doc_cfg",
         doc(cfg(all(feature = "demux", feature = "0_5")))
     )]
-    pub fn WebPAnimDecoderHasMoreFrames(dec: *const WebPAnimDecoder) -> c_int;
-    #[cfg(feature = "0_5")]
-    #[cfg_attr(
-        feature = "__doc_cfg",
-        doc(cfg(all(feature = "demux", feature = "0_5")))
-    )]
     pub fn WebPAnimDecoderReset(dec: *mut WebPAnimDecoder);
     #[cfg(feature = "0_5")]
     #[cfg_attr(
@@ -304,6 +298,22 @@ pub unsafe extern "C" fn DefaultDecoderOptions(
 ) {
     (*dec_options).color_mode = MODE_RGBA;
     (*dec_options).use_threads = 0;
+}
+
+#[cfg(feature = "0_5")]
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+pub unsafe extern "C" fn WebPAnimDecoderHasMoreFrames(dec: *const WebPAnimDecoder) -> c_int {
+    if dec.is_null() {
+        0
+    } else if (*dec).next_frame_ <= (*dec).info_.frame_count.try_into().expect("comparing i32 to u32 :(") {
+        1
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]
