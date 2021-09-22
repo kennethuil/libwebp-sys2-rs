@@ -19,9 +19,7 @@
 
 //------------------------------------------------------------------------------
 
-static WEBP_INLINE uint8_t clip_8b(int v) {
-  return (!(v & ~0xff)) ? v : (v < 0) ? 0 : 255;
-}
+
 
 //------------------------------------------------------------------------------
 // Transforms (Paragraph 14.4)
@@ -40,68 +38,16 @@ static WEBP_INLINE uint8_t clip_8b(int v) {
 #define MUL1(a) ((((a) * 20091) >> 16) + (a))
 #define MUL2(a) (((a) * 35468) >> 16)
 
-#if !WEBP_NEON_OMIT_C_CODE
-static void TransformOne_C(const int16_t* in, uint8_t* dst) {
-  int C[4 * 4], *tmp;
-  int i;
-  tmp = C;
-  for (i = 0; i < 4; ++i) {    // vertical pass
-    const int a = in[0] + in[8];    // [-4096, 4094]
-    const int b = in[0] - in[8];    // [-4095, 4095]
-    const int c = MUL2(in[4]) - MUL1(in[12]);   // [-3783, 3783]
-    const int d = MUL1(in[4]) + MUL2(in[12]);   // [-3785, 3781]
-    tmp[0] = a + d;   // [-7881, 7875]
-    tmp[1] = b + c;   // [-7878, 7878]
-    tmp[2] = b - c;   // [-7878, 7878]
-    tmp[3] = a - d;   // [-7877, 7879]
-    tmp += 4;
-    in++;
-  }
-  // Each pass is expanding the dynamic range by ~3.85 (upper bound).
-  // The exact value is (2. + (20091 + 35468) / 65536).
-  // After the second pass, maximum interval is [-3794, 3794], assuming
-  // an input in [-2048, 2047] interval. We then need to add a dst value
-  // in the [0, 255] range.
-  // In the worst case scenario, the input to clip_8b() can be as large as
-  // [-60713, 60968].
-  tmp = C;
-  for (i = 0; i < 4; ++i) {    // horizontal pass
-    const int dc = tmp[0] + 4;
-    const int a =  dc +  tmp[8];
-    const int b =  dc -  tmp[8];
-    const int c = MUL2(tmp[4]) - MUL1(tmp[12]);
-    const int d = MUL1(tmp[4]) + MUL2(tmp[12]);
-    STORE(0, 0, a + d);
-    STORE(1, 0, b + c);
-    STORE(2, 0, b - c);
-    STORE(3, 0, a - d);
-    tmp++;
-    dst += BPS;
-  }
-}
 
-// Simplified transform when only in[0], in[1] and in[4] are non-zero
-static void TransformAC3_C(const int16_t* in, uint8_t* dst) {
-  const int a = in[0] + 4;
-  const int c4 = MUL2(in[4]);
-  const int d4 = MUL1(in[4]);
-  const int c1 = MUL2(in[1]);
-  const int d1 = MUL1(in[1]);
-  STORE2(0, a + d4, d1, c1);
-  STORE2(1, a + c4, d1, c1);
-  STORE2(2, a - c4, d1, c1);
-  STORE2(3, a - d4, d1, c1);
-}
+#if !WEBP_NEON_OMIT_C_CODE
+void TransformAC3_C(const int16_t* in, uint8_t* dst);
+
 #undef MUL1
 #undef MUL2
 #undef STORE2
 
-static void TransformTwo_C(const int16_t* in, uint8_t* dst, int do_two) {
-  TransformOne_C(in, dst);
-  if (do_two) {
-    TransformOne_C(in + 16, dst + 4);
-  }
-}
+void TransformTwo_C(const int16_t* in, uint8_t* dst, int do_two);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 static void TransformUV_C(const int16_t* in, uint8_t* dst) {
@@ -710,6 +656,7 @@ static void DitherCombine8x8_C(const uint8_t* dither, uint8_t* dst,
   }
 }
 
+
 //------------------------------------------------------------------------------
 
 VP8DecIdct2 VP8Transform;
@@ -806,6 +753,7 @@ WEBP_DSP_INIT_FUNC(VP8DspInit) {
   VP8DitherCombine8x8 = DitherCombine8x8_C;
 
   // If defined, use CPUInfo() to overwrite some pointers with faster versions.
+  /*
   if (VP8GetCPUInfo != NULL) {
 #if defined(WEBP_USE_SSE2)
     if (VP8GetCPUInfo(kSSE2)) {
@@ -840,7 +788,7 @@ WEBP_DSP_INIT_FUNC(VP8DspInit) {
     VP8DspInitNEON();
   }
 #endif
-
+*/
   assert(VP8TransformWHT != NULL);
   assert(VP8Transform != NULL);
   assert(VP8TransformDC != NULL);

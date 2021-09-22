@@ -23,3 +23,4 @@ mod mux;
 #[cfg(any(feature = "mux", feature = "demux"))]
 mod mux_types;
 mod types;
+mod dec;
