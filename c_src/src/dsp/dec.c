@@ -56,15 +56,8 @@ static void TransformUV_C(const int16_t* in, uint8_t* dst) {
 }
 
 #if !WEBP_NEON_OMIT_C_CODE
-static void TransformDC_C(const int16_t* in, uint8_t* dst) {
-  const int DC = in[0] + 4;
-  int i, j;
-  for (j = 0; j < 4; ++j) {
-    for (i = 0; i < 4; ++i) {
-      STORE(i, j, DC);
-    }
-  }
-}
+void TransformDC_C(const int16_t* in, uint8_t* dst);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 static void TransformDCUV_C(const int16_t* in, uint8_t* dst) {
@@ -641,21 +634,8 @@ static void HFilter8i_C(uint8_t* u, uint8_t* v, int stride,
 
 //------------------------------------------------------------------------------
 
-static void DitherCombine8x8_C(const uint8_t* dither, uint8_t* dst,
-                               int dst_stride) {
-  int i, j;
-  for (j = 0; j < 8; ++j) {
-    for (i = 0; i < 8; ++i) {
-      const int delta0 = dither[i] - VP8_DITHER_AMP_CENTER;
-      const int delta1 =
-          (delta0 + VP8_DITHER_DESCALE_ROUNDER) >> VP8_DITHER_DESCALE;
-      dst[i] = clip_8b((int)dst[i] + delta1);
-    }
-    dst += dst_stride;
-    dither += 8;
-  }
-}
-
+void DitherCombine8x8_C(const uint8_t* dither, uint8_t* dst,
+                               int dst_stride);
 
 //------------------------------------------------------------------------------
 
@@ -752,43 +732,6 @@ WEBP_DSP_INIT_FUNC(VP8DspInit) {
 
   VP8DitherCombine8x8 = DitherCombine8x8_C;
 
-  // If defined, use CPUInfo() to overwrite some pointers with faster versions.
-  /*
-  if (VP8GetCPUInfo != NULL) {
-#if defined(WEBP_USE_SSE2)
-    if (VP8GetCPUInfo(kSSE2)) {
-      VP8DspInitSSE2();
-#if defined(WEBP_USE_SSE41)
-      if (VP8GetCPUInfo(kSSE4_1)) {
-        VP8DspInitSSE41();
-      }
-#endif
-    }
-#endif
-#if defined(WEBP_USE_MIPS32)
-    if (VP8GetCPUInfo(kMIPS32)) {
-      VP8DspInitMIPS32();
-    }
-#endif
-#if defined(WEBP_USE_MIPS_DSP_R2)
-    if (VP8GetCPUInfo(kMIPSdspR2)) {
-      VP8DspInitMIPSdspR2();
-    }
-#endif
-#if defined(WEBP_USE_MSA)
-    if (VP8GetCPUInfo(kMSA)) {
-      VP8DspInitMSA();
-    }
-#endif
-  }
-
-#if defined(WEBP_USE_NEON)
-  if (WEBP_NEON_OMIT_C_CODE ||
-      (VP8GetCPUInfo != NULL && VP8GetCPUInfo(kNEON))) {
-    VP8DspInitNEON();
-  }
-#endif
-*/
   assert(VP8TransformWHT != NULL);
   assert(VP8Transform != NULL);
   assert(VP8TransformDC != NULL);

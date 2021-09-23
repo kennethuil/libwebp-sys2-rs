@@ -5,8 +5,7 @@ use std::convert::TryInto;
     feature = "__doc_cfg",
     doc(cfg(all(feature = "demux", feature = "0_5")))
 )]
-#[no_mangle]
-extern "C" fn clip_8b(
+fn clip_8b(
     v: c_int
 ) -> u8 {
     if v & !0xff == 0 {
@@ -52,8 +51,6 @@ unsafe extern "C" fn TransformAC3_C(r#in: *const i16, dst: *mut u8) {
     transform_ac3(input_arr, output_arr);
 }
 
-// TODO: Get some test coverage for DitherCombine8x8_C
-/* 
 #[cfg_attr(
     feature = "__doc_cfg",
     doc(cfg(all(feature = "demux", feature = "0_5")))
@@ -65,7 +62,17 @@ unsafe extern "C" fn DitherCombine8x8_C(dither: *const u8, dst: *mut u8, dst_str
     let dst = std::slice::from_raw_parts_mut(dst, dst_stride * 8);
     dither_combine_8x8(dither, dst, dst_stride);
 }
-*/
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn TransformDC_C(r#in: *const i16, dst: *mut u8) {
+    let input = *r#in;
+    let output_arr = &mut *(dst as *mut[u8; 128]);
+    transform_dc(input, output_arr);
+}
 
 fn mul1(a: i32) -> i32 {
     ((a * 20091) >> 16) + a
@@ -84,6 +91,15 @@ fn store2(dst: &mut [u8], y: usize, dc: i32, d: i32, c: i32) {
     store(dst, 1, y, dc + c);
     store(dst, 2, y, dc - c);
     store(dst, 3, y, dc - d);
+}
+
+fn transform_dc(r#in: i16, dst: &mut [u8; 128]) {
+    let dc = (r#in + 4).into();
+    for i in 0..4 {
+        for j in 0..4 {
+            store(dst, i, j, dc);
+        }
+    }
 }
 
 fn transformtwo(r#in: &[i16; 32], dst: &mut [u8; 132], do_two: bool) {
