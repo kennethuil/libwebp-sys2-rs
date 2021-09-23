@@ -74,6 +74,17 @@ unsafe extern "C" fn TransformDC_C(r#in: *const i16, dst: *mut u8) {
     transform_dc(input, output_arr);
 }
 
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn TransformWHT_C(r#in: *const i16, out: *mut i16) {
+    let input = &*(r#in as *const[i16; 16]);
+    let output = &mut *(out as *mut[i16; 256]);
+    transform_wht(input, output);
+}
+
 fn mul1(a: i32) -> i32 {
     ((a * 20091) >> 16) + a
 }
@@ -163,6 +174,34 @@ fn transform_ac3(r#in: &[i16; 5], dst: &mut [u8; 128]) {
     store2(dst, 2, a - c4, d1, c1);
     store2(dst, 3, a - d4, d1, c1);
 }
+
+fn transform_wht(r#in: &[i16; 16], out: &mut [i16; 256]) {
+    let mut out = &mut out[..];
+    let mut tmp = [0; 16];
+    for i in 0..4 {
+        let a0 = r#in[0 + i] + r#in[12 + i];
+        let a1 = r#in[4 + i] + r#in[ 8 + i];
+        let a2 = r#in[4 + i] - r#in[ 8 + i];
+        let a3 = r#in[0 + i] - r#in[12 + i];
+        tmp[ 0 + i] = a0 + a1;
+        tmp[ 8 + i] = a0 - a1;
+        tmp[ 4 + i] = a3 + a2;
+        tmp[12 + i] = a3 - a2;
+    }
+    for i in 0..4 {
+        let dc = tmp[0 + i * 4] + 3; // w/ rounder
+        let a0 = dc             + tmp[3 + i * 4];
+        let a1 = tmp[1 + i * 4] + tmp[2 + i * 4];
+        let a2 = tmp[1 + i * 4] - tmp[2 + i * 4];
+        let a3 = dc             - tmp[3 + i * 4];
+        out[ 0] = (a0 + a1) >> 3;
+        out[16] = (a3 + a2) >> 3;
+        out[32] = (a0 - a1) >> 3;
+        out[48] = (a3 - a2) >> 3;
+        out = &mut out[64..];
+    }
+}
+
 
 const VP8_DITHER_AMP_CENTER: i32 = 1 << 7;
 const VP8_DITHER_DESCALE_ROUNDER: i32 = 1 << (4 - 1);
