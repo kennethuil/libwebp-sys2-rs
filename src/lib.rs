@@ -24,3 +24,5 @@ mod mux;
 mod mux_types;
 mod types;
 mod dec;
+mod offsetref;
+mod dec_clip_tables;

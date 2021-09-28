@@ -1,5 +1,75 @@
 use std::os::raw::*;
 use std::convert::TryInto;
+use bytemuck::TransparentWrapper;
+
+use crate::offsetref::{OffsetArray};
+use crate::dec_clip_tables::VP8_KCLIP1;
+
+const BPS: isize = 32;
+
+// DST_SIZE = BPS * SIZE_PARAM + BPS + 1
+fn true_motion<const DST_SIZE: usize, const SIZE_PARAM: isize>(dst: &mut OffsetArray<u8, DST_SIZE, {BPS+1}>) {
+    // min index: -33 (-BPS - 1)
+    // max index: BPS * size
+    let mut top = dst.with_offset(-BPS);
+    let mut dst_offset = BPS;
+    let clip0 = VP8_KCLIP1.with_offset(-(top[-1] as isize));
+    for _ in 0..SIZE_PARAM {
+        let clip = clip0.with_offset(top[dst_offset-1].into());
+        for x in 0..SIZE_PARAM {
+            top[x + dst_offset] = clip[top[x].into()];
+        }
+        dst_offset += BPS;
+    }
+}
+
+fn tm4(dst: &mut OffsetArray<u8, {(BPS*4+BPS+1) as usize}, {BPS+1}>) {
+    true_motion::<{(BPS*4+BPS+1) as usize}, 4>(dst);
+}
+
+fn tm8uv(dst: &mut OffsetArray<u8, {(BPS*8+BPS+1) as usize}, {BPS+1}>) {
+    true_motion::<{(BPS*8+BPS+1) as usize}, 8>(dst);
+}
+
+fn tm16(dst: &mut OffsetArray<u8, {(BPS*16+BPS+1) as usize}, {BPS+1}>) {
+    true_motion::<{(BPS*16+BPS+1) as usize}, 16>(dst);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn TM4_C(dst: *mut u8) {
+    let begin = dst.offset(-BPS-1);
+    let dst_arr = &mut *(begin as *mut[u8; (BPS*4+BPS+1) as usize]);
+    let dst_arr = OffsetArray::<u8, {(BPS*4+BPS+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    tm4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn TM8uv_C(dst: *mut u8) {
+    let begin = dst.offset(-BPS-1);
+    let dst_arr = &mut *(begin as *mut[u8; (BPS*8+BPS+1) as usize]);
+    let dst_arr = OffsetArray::<u8, {(BPS*8+BPS+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    tm8uv(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn TM16_C(dst: *mut u8) {
+    let begin = dst.offset(-BPS-1);
+    let dst_arr = &mut *(begin as *mut[u8; (BPS*16+BPS+1) as usize]);
+    let dst_arr = OffsetArray::<u8, {(BPS*16+BPS+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    tm16(dst_arr);
+}
 
 #[cfg_attr(
     feature = "__doc_cfg",

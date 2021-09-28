@@ -85,22 +85,10 @@ void (*VP8TransformWHT)(const int16_t* in, int16_t* out);
 #define DST(x, y) dst[(x) + (y) * BPS]
 
 #if !WEBP_NEON_OMIT_C_CODE
-static WEBP_INLINE void TrueMotion(uint8_t* dst, int size) {
-  const uint8_t* top = dst - BPS;
-  const uint8_t* const clip0 = VP8kclip1 - top[-1];
-  int y;
-  for (y = 0; y < size; ++y) {
-    const uint8_t* const clip = clip0 + dst[-1];
-    int x;
-    for (x = 0; x < size; ++x) {
-      dst[x] = clip[top[x]];
-    }
-    dst += BPS;
-  }
-}
-static void TM4_C(uint8_t* dst)   { TrueMotion(dst, 4); }
-static void TM8uv_C(uint8_t* dst) { TrueMotion(dst, 8); }
-static void TM16_C(uint8_t* dst)  { TrueMotion(dst, 16); }
+
+void TM4_C(uint8_t* dst); //   { TrueMotion(dst, 4); }
+void TM8uv_C(uint8_t* dst); // { TrueMotion(dst, 8); }
+void TM16_C(uint8_t* dst); //  { TrueMotion(dst, 16); }
 
 //------------------------------------------------------------------------------
 // 16x16
