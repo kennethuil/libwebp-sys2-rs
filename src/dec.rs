@@ -23,16 +23,16 @@ fn true_motion<const DST_SIZE: usize, const SIZE_PARAM: isize>(dst: &mut OffsetA
     }
 }
 
-fn tm4(dst: &mut OffsetArray<u8, {(BPS*4+BPS+1) as usize}, {BPS+1}>) {
-    true_motion::<{(BPS*4+BPS+1) as usize}, 4>(dst);
+fn tm4(dst: &mut OffsetArray<u8, {((BPS+1)*4+1) as usize}, {BPS+1}>) {
+    true_motion::<{((BPS+1)*4+1) as usize}, 4>(dst);
 }
 
-fn tm8uv(dst: &mut OffsetArray<u8, {(BPS*8+BPS+1) as usize}, {BPS+1}>) {
-    true_motion::<{(BPS*8+BPS+1) as usize}, 8>(dst);
+fn tm8uv(dst: &mut OffsetArray<u8, {((BPS+1)*8+1) as usize}, {BPS+1}>) {
+    true_motion::<{((BPS+1)*8+1) as usize}, 8>(dst);
 }
 
-fn tm16(dst: &mut OffsetArray<u8, {(BPS*16+BPS+1) as usize}, {BPS+1}>) {
-    true_motion::<{(BPS*16+BPS+1) as usize}, 16>(dst);
+fn tm16(dst: &mut OffsetArray<u8, {((BPS+1)*16+1) as usize}, {BPS+1}>) {
+    true_motion::<{((BPS+1)*16+1) as usize}, 16>(dst);
 }
 
 #[cfg_attr(
@@ -42,8 +42,8 @@ fn tm16(dst: &mut OffsetArray<u8, {(BPS*16+BPS+1) as usize}, {BPS+1}>) {
 #[no_mangle]
 unsafe extern "C" fn TM4_C(dst: *mut u8) {
     let begin = dst.offset(-BPS-1);
-    let dst_arr = &mut *(begin as *mut[u8; (BPS*4+BPS+1) as usize]);
-    let dst_arr = OffsetArray::<u8, {(BPS*4+BPS+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    let dst_arr = &mut *(begin as *mut[u8; ((BPS+1)*4+1) as usize]);
+    let dst_arr = OffsetArray::<u8, {((BPS+1)*4+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
     tm4(dst_arr);
 }
 
@@ -54,8 +54,8 @@ unsafe extern "C" fn TM4_C(dst: *mut u8) {
 #[no_mangle]
 unsafe extern "C" fn TM8uv_C(dst: *mut u8) {
     let begin = dst.offset(-BPS-1);
-    let dst_arr = &mut *(begin as *mut[u8; (BPS*8+BPS+1) as usize]);
-    let dst_arr = OffsetArray::<u8, {(BPS*8+BPS+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    let dst_arr = &mut *(begin as *mut[u8; ((BPS+1)*8+1) as usize]);
+    let dst_arr = OffsetArray::<u8, {((BPS+1)*8+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
     tm8uv(dst_arr);
 }
 
@@ -66,8 +66,8 @@ unsafe extern "C" fn TM8uv_C(dst: *mut u8) {
 #[no_mangle]
 unsafe extern "C" fn TM16_C(dst: *mut u8) {
     let begin = dst.offset(-BPS-1);
-    let dst_arr = &mut *(begin as *mut[u8; (BPS*16+BPS+1) as usize]);
-    let dst_arr = OffsetArray::<u8, {(BPS*16+BPS+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    let dst_arr = &mut *(begin as *mut[u8; ((BPS+1)*16+1) as usize]);
+    let dst_arr = OffsetArray::<u8, {((BPS+1)*16+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
     tm16(dst_arr);
 }
 
