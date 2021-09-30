@@ -6,6 +6,7 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-env-changed=LIBWEBP_SYS_STATIC");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=c_src");
     let host = env::var("HOST").unwrap();
     let target = env::var("TARGET").unwrap();
     let host_and_target_contain = |s| host.contains(s) && target.contains(s);
