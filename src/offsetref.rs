@@ -1,4 +1,4 @@
-use std::ops::{Index, IndexMut};
+use std::{ops::{Index, IndexMut, Range}, slice::ChunksExactMut};
 
 use bytemuck::TransparentWrapper;
 
@@ -56,6 +56,7 @@ impl<T> OffsetSliceRefMut<'_, T> {
     pub fn move_zero(&mut self, offset: isize) {
         self.zero += offset;
     }
+
 }
 
 impl<T> Index<isize> for OffsetSliceRefMut<'_, T> {
@@ -83,6 +84,25 @@ impl<T, const SIZE: usize, const ZERO: isize> OffsetArray<T, SIZE, ZERO> {
     pub fn with_offset<'b, 'c>(&'c mut self, offset: isize) -> OffsetSliceRefMut<'b, T> where 'c: 'b {
         OffsetSliceRefMut{slice: &mut self.arr[..], zero: ZERO + offset}
     }
+
+    // Creates an OffsetArray reference where ZERO represents the location pointed to by ptr
+    pub unsafe fn from_zero_mut_ptr<'a>(ptr: *mut T) -> &'a mut OffsetArray<T, SIZE, ZERO> {
+        let begin = ptr.offset(-ZERO);
+        let arr = &mut *(begin as *mut[T; SIZE]);
+        OffsetArray::<T, SIZE, ZERO>::wrap_mut(arr)
+    }
+
+    // Passthrough to arr.chunks_exact_mut.  Yields regular slice refs starting at
+    // -ZERO (self.arr[0]).
+    pub fn chunks_exact_mut(&mut self, chunk_size: usize) -> ChunksExactMut<'_, T> {
+        self.arr.chunks_exact_mut(chunk_size)
+    }
+
+    // Passthrough to arr.split_at_mut.  Yields regular slice refs.
+    pub fn split_at_mut<'b, 'c>(&'c mut self, mid: isize) -> (&'b mut [T], &'b mut [T]) where 'c: 'b {
+        let computed_mid = ZERO + mid;
+        self.arr.split_at_mut(computed_mid as usize)
+    }
 }
 
 impl<T, const SIZE: usize, const ZERO: isize> Index<isize> for OffsetArray<T, SIZE, ZERO> {
@@ -94,9 +114,25 @@ impl<T, const SIZE: usize, const ZERO: isize> Index<isize> for OffsetArray<T, SI
     }
 }
 
+impl<T, const SIZE: usize, const ZERO: isize> Index<Range<isize>> for OffsetArray<T, SIZE, ZERO> {
+    type Output = [T];
+
+    fn index(&self, r: Range<isize>) -> &Self::Output {
+        let inner_range = ((r.start + ZERO) as usize)..((r.end + ZERO) as usize);
+        &self.arr[inner_range]
+    }
+}
+
 impl<T, const SIZE: usize, const ZERO: isize> IndexMut<isize> for OffsetArray<T, SIZE, ZERO> {
     fn index_mut(&mut self, index: isize) -> &mut Self::Output {
         let inner_idx = index + ZERO;
         &mut self.arr[inner_idx as usize]
+    }
+}
+
+impl<T, const SIZE: usize, const ZERO: isize> IndexMut<Range<isize>> for OffsetArray<T, SIZE, ZERO> {
+    fn index_mut(&mut self, r: Range<isize>) -> &mut Self::Output {
+        let inner_range = ((r.start + ZERO) as usize)..((r.end + ZERO) as usize);
+        &mut self.arr[inner_range]
     }
 }

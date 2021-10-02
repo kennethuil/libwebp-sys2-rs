@@ -93,58 +93,18 @@ void TM16_C(uint8_t* dst); //  { TrueMotion(dst, 16); }
 //------------------------------------------------------------------------------
 // 16x16
 
-static void VE16_C(uint8_t* dst) {     // vertical
-  int j;
-  for (j = 0; j < 16; ++j) {
-    memcpy(dst + j * BPS, dst - BPS, 16);
-  }
-}
+void VE16_C(uint8_t* dst);
 
-static void HE16_C(uint8_t* dst) {     // horizontal
-  int j;
-  for (j = 16; j > 0; --j) {
-    memset(dst, dst[-1], 16);
-    dst += BPS;
-  }
-}
+void HE16_C(uint8_t* dst);
 
-static WEBP_INLINE void Put16(int v, uint8_t* dst) {
-  int j;
-  for (j = 0; j < 16; ++j) {
-    memset(dst + j * BPS, v, 16);
-  }
-}
+void DC16_C(uint8_t* dst);
 
-static void DC16_C(uint8_t* dst) {    // DC
-  int DC = 16;
-  int j;
-  for (j = 0; j < 16; ++j) {
-    DC += dst[-1 + j * BPS] + dst[j - BPS];
-  }
-  Put16(DC >> 5, dst);
-}
+void DC16NoTop_C(uint8_t* dst);
 
-static void DC16NoTop_C(uint8_t* dst) {   // DC with top samples not available
-  int DC = 8;
-  int j;
-  for (j = 0; j < 16; ++j) {
-    DC += dst[-1 + j * BPS];
-  }
-  Put16(DC >> 4, dst);
-}
+void DC16NoLeft_C(uint8_t* dst);
 
-static void DC16NoLeft_C(uint8_t* dst) {  // DC with left samples not available
-  int DC = 8;
-  int i;
-  for (i = 0; i < 16; ++i) {
-    DC += dst[i - BPS];
-  }
-  Put16(DC >> 4, dst);
-}
+void DC16NoTopLeft_C(uint8_t* dst);
 
-static void DC16NoTopLeft_C(uint8_t* dst) {  // DC with no top and left samples
-  Put16(0x80, dst);
-}
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 VP8PredFunc VP8PredLuma16[NUM_B_DC_MODES];

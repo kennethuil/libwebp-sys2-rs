@@ -6,6 +6,7 @@ use crate::offsetref::{OffsetArray};
 use crate::dec_clip_tables::VP8_KCLIP1;
 
 const BPS: isize = 32;
+const UBPS: usize = BPS as usize;
 
 // DST_SIZE = BPS * SIZE_PARAM + BPS + 1
 fn true_motion<const DST_SIZE: usize, const SIZE_PARAM: isize>(dst: &mut OffsetArray<u8, DST_SIZE, {BPS+1}>) {
@@ -23,6 +24,9 @@ fn true_motion<const DST_SIZE: usize, const SIZE_PARAM: isize>(dst: &mut OffsetA
     }
 }
 
+//------------------------------------------------------------------------------
+// Intra predictions
+
 fn tm4(dst: &mut OffsetArray<u8, {((BPS+1)*4+1) as usize}, {BPS+1}>) {
     true_motion::<{((BPS+1)*4+1) as usize}, 4>(dst);
 }
@@ -35,15 +39,139 @@ fn tm16(dst: &mut OffsetArray<u8, {((BPS+1)*16+1) as usize}, {BPS+1}>) {
     true_motion::<{((BPS+1)*16+1) as usize}, 16>(dst);
 }
 
+//------------------------------------------------------------------------------
+// 16x16
+
+fn ve16(dst: &mut OffsetArray<u8, {(BPS*17) as usize}, {BPS}>) { // vertical
+    let (src, dst) = dst.split_at_mut(0);
+    let src = &src[0..16];
+    for line in dst.chunks_exact_mut(32) {
+        let dst_line = &mut line[0..16];
+        dst_line.copy_from_slice(src);
+    }
+}
+
+fn he16(dst: &mut OffsetArray<u8, {(BPS*16+1) as usize}, 1>) { // horizontal
+    for chunk in dst.chunks_exact_mut(BPS as usize) {
+        let v = chunk[0];
+        chunk[1..17].fill(v);
+    }
+}
+
+fn put16(v: u8, dst: &mut [u8; 16*BPS as usize]) {
+    for chunk in dst.chunks_exact_mut(BPS as usize) {
+        chunk[0..16].fill(v);
+    }
+}
+
+fn dc16(dst: &mut OffsetArray<u8, {UBPS*17}, {BPS}>) {  // DC
+    // -BPS..16*BPS (put16 needs to go all the way up to 16*BPS)
+    let mut dc:u32 = 16;
+    for j in 0..16 {
+        let first = dst[-1 + j * BPS] as u32;
+        let second = dst[j-BPS] as u32;
+        let sum = first + second;
+        dc = dc.wrapping_add(sum);
+    }
+
+    // Parentheses around &mut dst[0..BPS*16] needed because otherwise try_into will
+    // make a temporary array (not array ref) and then &mut will make a reference to the temporary
+    // and put16 will then write to the temporary.
+    put16(((dc >> 5) & 0xff) as u8, (&mut dst[0..BPS*16]).try_into().unwrap());
+}
+
+fn dc16_no_top(dst: &mut OffsetArray<u8, {UBPS*16+1}, 1>) {  // DC with top samples not available
+    let mut dc:u32 = 8;
+    for j in 0..16 {
+        dc = dc.wrapping_add(dst[-1 + j * BPS] as u32);
+    }
+    put16(((dc >> 4) & 0xff) as u8, (&mut dst[0..BPS*16]).try_into().unwrap());
+}
+
+fn dc16_no_left(dst: &mut OffsetArray<u8, {UBPS*17}, {BPS}>) {  // DC with left samples not available
+    let mut dc:u32 = 8;
+    for i in 0..16 {
+        dc = dc.wrapping_add(dst[i - BPS] as u32);
+    }
+    put16(((dc >> 4) & 0xff) as u8, (&mut dst[0..BPS*16]).try_into().unwrap());
+}
+
+fn dc16_no_top_left(dst: &mut [u8; UBPS*16]) {  // DC with no top and left samples
+    put16(0x80, dst);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HE16_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::<u8, {(BPS*16+1) as usize}, 1>::from_zero_mut_ptr(dst);
+    he16(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC16_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::<u8, {UBPS*17}, BPS>::from_zero_mut_ptr(dst);
+    dc16(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC16NoTop_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::<u8, {UBPS*16+1}, 1>::from_zero_mut_ptr(dst);
+    dc16_no_top(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC16NoLeft_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::<u8, {UBPS*17}, BPS>::from_zero_mut_ptr(dst);
+    dc16_no_left(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC16NoTopLeft_C(dst: *mut u8) {
+    let dst_arr = &mut *(dst as *mut [u8; UBPS*16]);
+    dc16_no_top_left(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VE16_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::<u8, {(BPS*17) as usize}, BPS>::from_zero_mut_ptr(dst);
+    ve16(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
 #[cfg_attr(
     feature = "__doc_cfg",
     doc(cfg(all(feature = "demux", feature = "0_5")))
 )]
 #[no_mangle]
 unsafe extern "C" fn TM4_C(dst: *mut u8) {
-    let begin = dst.offset(-BPS-1);
-    let dst_arr = &mut *(begin as *mut[u8; ((BPS+1)*4+1) as usize]);
-    let dst_arr = OffsetArray::<u8, {((BPS+1)*4+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    let dst_arr = OffsetArray::<u8, {((BPS+1)*4+1) as usize}, {BPS+1}>::from_zero_mut_ptr(dst);
     tm4(dst_arr);
 }
 
@@ -53,9 +181,7 @@ unsafe extern "C" fn TM4_C(dst: *mut u8) {
 )]
 #[no_mangle]
 unsafe extern "C" fn TM8uv_C(dst: *mut u8) {
-    let begin = dst.offset(-BPS-1);
-    let dst_arr = &mut *(begin as *mut[u8; ((BPS+1)*8+1) as usize]);
-    let dst_arr = OffsetArray::<u8, {((BPS+1)*8+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+     let dst_arr = OffsetArray::<u8, {((BPS+1)*8+1) as usize}, {BPS+1}>::from_zero_mut_ptr(dst);
     tm8uv(dst_arr);
 }
 
@@ -65,9 +191,7 @@ unsafe extern "C" fn TM8uv_C(dst: *mut u8) {
 )]
 #[no_mangle]
 unsafe extern "C" fn TM16_C(dst: *mut u8) {
-    let begin = dst.offset(-BPS-1);
-    let dst_arr = &mut *(begin as *mut[u8; ((BPS+1)*16+1) as usize]);
-    let dst_arr = OffsetArray::<u8, {((BPS+1)*16+1) as usize}, {BPS+1}>::wrap_mut(dst_arr);
+    let dst_arr = OffsetArray::<u8, {((BPS+1)*16+1) as usize}, {BPS+1}>::from_zero_mut_ptr(dst);
     tm16(dst_arr);
 }
 
