@@ -1,7 +1,6 @@
 use std::os::raw::*;
 use std::convert::TryInto;
-use bytemuck::TransparentWrapper;
-
+use byteorder::{ByteOrder, LittleEndian};
 use crate::offsetref::{OffsetArray};
 use crate::dec_clip_tables::VP8_KCLIP1;
 
@@ -221,6 +220,272 @@ fn dc16_no_left(dst: &mut OffsetArray<u8, {UBPS*17}, {BPS}>) {  // DC with left 
 
 fn dc16_no_top_left(dst: &mut [u8; UBPS*16]) {  // DC with no top and left samples
     put16(0x80, dst);
+}
+
+//------------------------------------------------------------------------------
+// 4x4
+fn avg3(p1: u8, p2: u8, p3: u8) -> u8 {
+    (((p1 as u32) + 2 * (p2 as u32) + (p3 as u32) + 2) >> 2) as u8
+}
+
+fn avg2(p1: u8, p2: u8) -> u8 {
+    (((p1 as u32) + (p2 as u32) + 1) >> 1) as u8
+}
+
+fn ve4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) { // vertical
+    let top = dst.with_offset(-BPS);
+    let vals = [
+        avg3(top[-1], top[0], top[1]),
+        avg3(top[ 0], top[1], top[2]),
+        avg3(top[ 1], top[2], top[3]),
+        avg3(top[ 2], top[3], top[4]),
+    ];
+    for chunk in dst[0..].chunks_exact_mut(UBPS) {
+        chunk[0..4].copy_from_slice(&vals);
+    }
+}
+
+// #define DST(x, y) dst[(x) + (y) * BPS]
+fn he4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) {  // horizontal
+    // (-1-BPS)..(4*BPS)
+    let a = dst[-1 - BPS];
+    let b = dst[-1];
+    let c = dst[-1 + BPS];
+    let d = dst[-1 + 2 * BPS];
+    let e = dst[-1 + 3 * BPS];
+    LittleEndian::write_u32(&mut dst[0 * BPS..], 0x01010101 * avg3(a, b, c) as u32);
+    LittleEndian::write_u32(&mut dst[1 * BPS..], 0x01010101 * avg3(b, c, d) as u32);
+    LittleEndian::write_u32(&mut dst[2 * BPS..], 0x01010101 * avg3(c, d, e) as u32);
+    LittleEndian::write_u32(&mut dst[3 * BPS..], 0x01010101 * avg3(d, e, e) as u32);
+}
+
+
+fn dc4(dst: &mut OffsetArray<u8, {5*UBPS}, {BPS}>) { // DC
+    let mut dc = 4;
+
+    for i in 0..4 {
+        dc += (dst[i - BPS] as u32) + (dst[-1 + i * BPS] as u32);
+    }
+    let dc = (dc >> 3) as u8;
+    for chunk in dst[0..].chunks_exact_mut(UBPS) {
+        chunk[0..4].fill(dc);
+    }
+}
+
+fn assign<const NUM_COORDS: usize>(dst: &mut [u8], xy: [(usize,usize); NUM_COORDS], val: u8) {
+    for (x,y) in xy {
+        dst[x + y * UBPS] = val;
+    }
+}
+
+fn rd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Down-right
+    let i = dst[-1 + 0 * BPS];
+    let j = dst[-1 + 1 * BPS];
+    let k = dst[-1 + 2 * BPS];
+    let l = dst[-1 + 3 * BPS];
+    let x = dst[-1 - BPS];
+    let a = dst[ 0 - BPS];
+    let b = dst[ 1 - BPS];
+    let c = dst[ 2 - BPS];
+    let d = dst[ 3 - BPS];
+    assign(&mut dst[0..], [(0, 3)],                         avg3(j, k, l));
+    assign(&mut dst[0..], [(1, 3), (0, 2)],                 avg3(i, j, k));
+    assign(&mut dst[0..], [(2, 3), (1, 2), (0, 1)],         avg3(x, i, j));
+    assign(&mut dst[0..], [(3, 3), (2, 2), (1, 1), (0, 0)], avg3(a, x, i));
+    assign(&mut dst[0..], [        (3, 2), (2, 1), (1, 0)], avg3(b, a, x));
+    assign(&mut dst[0..], [                (3, 1), (2, 0)], avg3(c, b, a));
+    assign(&mut dst[0..], [                        (3, 0)], avg3(d, c, b));
+}
+
+fn ld4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) { // Down-Left
+    let a = dst[0 - BPS];
+    let b = dst[1 - BPS];
+    let c = dst[2 - BPS];
+    let d = dst[3 - BPS];
+    let e = dst[4 - BPS];
+    let f = dst[5 - BPS];
+    let g = dst[6 - BPS];
+    let h = dst[7 - BPS];
+    assign(&mut dst[0..], [(0, 0)],                         avg3(a, b, c));
+    assign(&mut dst[0..], [(1, 0), (0, 1)],                 avg3(b, c, d));
+    assign(&mut dst[0..], [(2, 0), (1, 1), (0, 2)],         avg3(c, d, e));
+    assign(&mut dst[0..], [(3, 0), (2, 1), (1, 2), (0, 3)], avg3(d, e, f));
+    assign(&mut dst[0..], [        (3, 1), (2, 2), (1, 3)], avg3(e, f, g));
+    assign(&mut dst[0..], [                (3, 2), (2, 3)], avg3(f, g, h));
+    assign(&mut dst[0..], [                        (3, 3)], avg3(g, h, h));
+}
+
+fn vr4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Vertical-Right
+    let i = dst[-1 + 0 * BPS];
+    let j = dst[-1 + 1 * BPS];
+    let k = dst[-1 + 2 * BPS];
+    let x = dst[-1 - BPS];
+    let a = dst[0 - BPS];
+    let b = dst[1 - BPS];
+    let c = dst[2 - BPS];
+    let d = dst[3 - BPS];
+    assign(&mut dst[0..], [(0, 0), (1, 2)], avg2(x, a));
+    assign(&mut dst[0..], [(1, 0), (2, 2)], avg2(a, b));
+    assign(&mut dst[0..], [(2, 0), (3, 2)], avg2(b, c));
+    assign(&mut dst[0..], [(3, 0)],         avg2(c, d));
+
+    assign(&mut dst[0..], [(0, 3)],         avg3(k, j, i));
+    assign(&mut dst[0..], [(0, 2)],         avg3(j, i, x));
+    assign(&mut dst[0..], [(0, 1), (1, 3)], avg3(i, x, a));
+    assign(&mut dst[0..], [(1, 1), (2, 3)], avg3(x, a, b));
+    assign(&mut dst[0..], [(2, 1), (3, 3)], avg3(a, b, c));
+    assign(&mut dst[0..], [(3, 1)],         avg3(b, c, d));
+}
+
+fn vl4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) {  // Vertical-Left
+    let a = dst[0 - BPS];
+    let b = dst[1 - BPS];
+    let c = dst[2 - BPS];
+    let d = dst[3 - BPS];
+    let e = dst[4 - BPS];
+    let f = dst[5 - BPS];
+    let g = dst[6 - BPS];
+    let h = dst[7 - BPS];
+    assign(&mut dst[0..], [(0, 0)],         avg2(a, b));
+    assign(&mut dst[0..], [(1, 0), (0, 2)], avg2(b, c));
+    assign(&mut dst[0..], [(2, 0), (1, 2)], avg2(c, d));
+    assign(&mut dst[0..], [(3, 0), (2, 2)], avg2(d, e));
+
+    assign(&mut dst[0..], [(0, 1)],         avg3(a, b, c));
+    assign(&mut dst[0..], [(1, 1), (0, 3)], avg3(b, c, d));
+    assign(&mut dst[0..], [(2, 1), (1, 3)], avg3(c, d, e));
+    assign(&mut dst[0..], [(3, 1), (2, 3)], avg3(d, e, f));
+    assign(&mut dst[0..], [        (3, 2)], avg3(e, f, g));
+    assign(&mut dst[0..], [        (3, 3)], avg3(f, g, h));
+}
+
+fn hu4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Up
+    let i = dst[-1 + 0 * BPS];
+    let j = dst[-1 + 1 * BPS];
+    let k = dst[-1 + 2 * BPS];
+    let l = dst[-1 + 3 * BPS];
+    assign(&mut dst[0..], [(0, 0)],         avg2(i, j));
+    assign(&mut dst[0..], [(2, 0), (0, 1)], avg2(j, k));
+    assign(&mut dst[0..], [(2, 1), (0, 2)], avg2(k, l));
+    assign(&mut dst[0..], [(1, 0)],         avg3(i, j, k));
+    assign(&mut dst[0..], [(3, 0), (1, 1)], avg3(j, k, l));
+    assign(&mut dst[0..], [(3, 1), (1, 2)], avg3(k, l, l));
+    assign(&mut dst[0..], [(3, 2), (2, 2), 
+        (0, 3), (1, 3), (2, 3), (3, 3)], l);
+}
+
+fn hd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Down
+    let i = dst[-1 + 0 * BPS];
+    let j = dst[-1 + 1 * BPS];
+    let k = dst[-1 + 2 * BPS];
+    let l = dst[-1 + 3 * BPS];
+    let x = dst[-1 - BPS];
+    let a = dst[0 - BPS];
+    let b = dst[1 - BPS];
+    let c = dst[2 - BPS];
+
+    assign(&mut dst[0..], [(0, 0), (2, 1)], avg2(i, x));
+    assign(&mut dst[0..], [(0, 1), (2, 2)], avg2(j, i));
+    assign(&mut dst[0..], [(0, 2), (2, 3)], avg2(k, j));
+    assign(&mut dst[0..], [(0, 3)],         avg2(l, k));
+
+    assign(&mut dst[0..], [(3, 0)],         avg3(a, b, c));
+    assign(&mut dst[0..], [(2, 0)],         avg3(x, a, b));
+    assign(&mut dst[0..], [(1, 0), (3, 1)], avg3(i, x, a));
+    assign(&mut dst[0..], [(1, 1), (3, 2)], avg3(j, i, x));
+    assign(&mut dst[0..], [(1, 2), (3, 3)], avg3(k, j, i));
+    assign(&mut dst[0..], [(1, 3)],         avg3(l, k, j));
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HD4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    hd4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HU4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    hu4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VL4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    vl4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn RD4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    rd4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VR4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    vr4(dst_arr);
+}
+
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn LD4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    ld4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VE4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    ve4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    dc4(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HE4_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::<u8, {5*UBPS+1}, {BPS+1}>::from_zero_mut_ptr(dst);
+    he4(dst_arr);
 }
 
 #[cfg_attr(

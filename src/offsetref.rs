@@ -1,4 +1,4 @@
-use std::{ops::{Index, IndexMut, Range}, slice::ChunksExactMut};
+use std::{ops::{Index, IndexMut, Range, RangeFrom}, slice::ChunksExactMut};
 
 use bytemuck::TransparentWrapper;
 
@@ -123,6 +123,15 @@ impl<T, const SIZE: usize, const ZERO: isize> Index<Range<isize>> for OffsetArra
     }
 }
 
+impl<T, const SIZE: usize, const ZERO: isize> Index<RangeFrom<isize>> for OffsetArray<T, SIZE, ZERO> {
+    type Output = [T];
+
+    fn index(&self, r: RangeFrom<isize>) -> &Self::Output {
+        let inner_range = ((r.start + ZERO) as usize)..;
+        &self.arr[inner_range]
+    }
+}
+
 impl<T, const SIZE: usize, const ZERO: isize> IndexMut<isize> for OffsetArray<T, SIZE, ZERO> {
     fn index_mut(&mut self, index: isize) -> &mut Self::Output {
         let inner_idx = index + ZERO;
@@ -133,6 +142,13 @@ impl<T, const SIZE: usize, const ZERO: isize> IndexMut<isize> for OffsetArray<T,
 impl<T, const SIZE: usize, const ZERO: isize> IndexMut<Range<isize>> for OffsetArray<T, SIZE, ZERO> {
     fn index_mut(&mut self, r: Range<isize>) -> &mut Self::Output {
         let inner_range = ((r.start + ZERO) as usize)..((r.end + ZERO) as usize);
+        &mut self.arr[inner_range]
+    }
+}
+
+impl<T, const SIZE: usize, const ZERO: isize> IndexMut<RangeFrom<isize>> for OffsetArray<T, SIZE, ZERO> {
+    fn index_mut(&mut self, r: RangeFrom<isize>) -> &mut Self::Output {
+        let inner_range = ((r.start + ZERO) as usize)..;
         &mut self.arr[inner_range]
     }
 }

@@ -116,161 +116,27 @@ VP8PredFunc VP8PredLuma16[NUM_B_DC_MODES];
 #define AVG2(a, b) (((a) + (b) + 1) >> 1)
 
 #if !WEBP_NEON_OMIT_C_CODE
-static void VE4_C(uint8_t* dst) {    // vertical
-  const uint8_t* top = dst - BPS;
-  const uint8_t vals[4] = {
-    AVG3(top[-1], top[0], top[1]),
-    AVG3(top[ 0], top[1], top[2]),
-    AVG3(top[ 1], top[2], top[3]),
-    AVG3(top[ 2], top[3], top[4])
-  };
-  int i;
-  for (i = 0; i < 4; ++i) {
-    memcpy(dst + i * BPS, vals, sizeof(vals));
-  }
-}
+void VE4_C(uint8_t* dst);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
-static void HE4_C(uint8_t* dst) {    // horizontal
-  const int A = dst[-1 - BPS];
-  const int B = dst[-1];
-  const int C = dst[-1 + BPS];
-  const int D = dst[-1 + 2 * BPS];
-  const int E = dst[-1 + 3 * BPS];
-  WebPUint32ToMem(dst + 0 * BPS, 0x01010101U * AVG3(A, B, C));
-  WebPUint32ToMem(dst + 1 * BPS, 0x01010101U * AVG3(B, C, D));
-  WebPUint32ToMem(dst + 2 * BPS, 0x01010101U * AVG3(C, D, E));
-  WebPUint32ToMem(dst + 3 * BPS, 0x01010101U * AVG3(D, E, E));
-}
+void HE4_C(uint8_t* dst);
 
 #if !WEBP_NEON_OMIT_C_CODE
-static void DC4_C(uint8_t* dst) {   // DC
-  uint32_t dc = 4;
-  int i;
-  for (i = 0; i < 4; ++i) dc += dst[i - BPS] + dst[-1 + i * BPS];
-  dc >>= 3;
-  for (i = 0; i < 4; ++i) memset(dst + i * BPS, dc, 4);
-}
+void DC4_C(uint8_t* dst);
 
-static void RD4_C(uint8_t* dst) {   // Down-right
-  const int I = dst[-1 + 0 * BPS];
-  const int J = dst[-1 + 1 * BPS];
-  const int K = dst[-1 + 2 * BPS];
-  const int L = dst[-1 + 3 * BPS];
-  const int X = dst[-1 - BPS];
-  const int A = dst[0 - BPS];
-  const int B = dst[1 - BPS];
-  const int C = dst[2 - BPS];
-  const int D = dst[3 - BPS];
-  DST(0, 3)                                     = AVG3(J, K, L);
-  DST(1, 3) = DST(0, 2)                         = AVG3(I, J, K);
-  DST(2, 3) = DST(1, 2) = DST(0, 1)             = AVG3(X, I, J);
-  DST(3, 3) = DST(2, 2) = DST(1, 1) = DST(0, 0) = AVG3(A, X, I);
-              DST(3, 2) = DST(2, 1) = DST(1, 0) = AVG3(B, A, X);
-                          DST(3, 1) = DST(2, 0) = AVG3(C, B, A);
-                                      DST(3, 0) = AVG3(D, C, B);
-}
+void RD4_C(uint8_t* dst);
 
-static void LD4_C(uint8_t* dst) {   // Down-Left
-  const int A = dst[0 - BPS];
-  const int B = dst[1 - BPS];
-  const int C = dst[2 - BPS];
-  const int D = dst[3 - BPS];
-  const int E = dst[4 - BPS];
-  const int F = dst[5 - BPS];
-  const int G = dst[6 - BPS];
-  const int H = dst[7 - BPS];
-  DST(0, 0)                                     = AVG3(A, B, C);
-  DST(1, 0) = DST(0, 1)                         = AVG3(B, C, D);
-  DST(2, 0) = DST(1, 1) = DST(0, 2)             = AVG3(C, D, E);
-  DST(3, 0) = DST(2, 1) = DST(1, 2) = DST(0, 3) = AVG3(D, E, F);
-              DST(3, 1) = DST(2, 2) = DST(1, 3) = AVG3(E, F, G);
-                          DST(3, 2) = DST(2, 3) = AVG3(F, G, H);
-                                      DST(3, 3) = AVG3(G, H, H);
-}
+void LD4_C(uint8_t* dst);
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
-static void VR4_C(uint8_t* dst) {   // Vertical-Right
-  const int I = dst[-1 + 0 * BPS];
-  const int J = dst[-1 + 1 * BPS];
-  const int K = dst[-1 + 2 * BPS];
-  const int X = dst[-1 - BPS];
-  const int A = dst[0 - BPS];
-  const int B = dst[1 - BPS];
-  const int C = dst[2 - BPS];
-  const int D = dst[3 - BPS];
-  DST(0, 0) = DST(1, 2) = AVG2(X, A);
-  DST(1, 0) = DST(2, 2) = AVG2(A, B);
-  DST(2, 0) = DST(3, 2) = AVG2(B, C);
-  DST(3, 0)             = AVG2(C, D);
+void VR4_C(uint8_t* dst);
 
-  DST(0, 3) =             AVG3(K, J, I);
-  DST(0, 2) =             AVG3(J, I, X);
-  DST(0, 1) = DST(1, 3) = AVG3(I, X, A);
-  DST(1, 1) = DST(2, 3) = AVG3(X, A, B);
-  DST(2, 1) = DST(3, 3) = AVG3(A, B, C);
-  DST(3, 1) =             AVG3(B, C, D);
-}
+void VL4_C(uint8_t* dst);
 
-static void VL4_C(uint8_t* dst) {   // Vertical-Left
-  const int A = dst[0 - BPS];
-  const int B = dst[1 - BPS];
-  const int C = dst[2 - BPS];
-  const int D = dst[3 - BPS];
-  const int E = dst[4 - BPS];
-  const int F = dst[5 - BPS];
-  const int G = dst[6 - BPS];
-  const int H = dst[7 - BPS];
-  DST(0, 0) =             AVG2(A, B);
-  DST(1, 0) = DST(0, 2) = AVG2(B, C);
-  DST(2, 0) = DST(1, 2) = AVG2(C, D);
-  DST(3, 0) = DST(2, 2) = AVG2(D, E);
+void HU4_C(uint8_t* dst);
 
-  DST(0, 1) =             AVG3(A, B, C);
-  DST(1, 1) = DST(0, 3) = AVG3(B, C, D);
-  DST(2, 1) = DST(1, 3) = AVG3(C, D, E);
-  DST(3, 1) = DST(2, 3) = AVG3(D, E, F);
-              DST(3, 2) = AVG3(E, F, G);
-              DST(3, 3) = AVG3(F, G, H);
-}
-
-static void HU4_C(uint8_t* dst) {   // Horizontal-Up
-  const int I = dst[-1 + 0 * BPS];
-  const int J = dst[-1 + 1 * BPS];
-  const int K = dst[-1 + 2 * BPS];
-  const int L = dst[-1 + 3 * BPS];
-  DST(0, 0) =             AVG2(I, J);
-  DST(2, 0) = DST(0, 1) = AVG2(J, K);
-  DST(2, 1) = DST(0, 2) = AVG2(K, L);
-  DST(1, 0) =             AVG3(I, J, K);
-  DST(3, 0) = DST(1, 1) = AVG3(J, K, L);
-  DST(3, 1) = DST(1, 2) = AVG3(K, L, L);
-  DST(3, 2) = DST(2, 2) =
-    DST(0, 3) = DST(1, 3) = DST(2, 3) = DST(3, 3) = L;
-}
-
-static void HD4_C(uint8_t* dst) {  // Horizontal-Down
-  const int I = dst[-1 + 0 * BPS];
-  const int J = dst[-1 + 1 * BPS];
-  const int K = dst[-1 + 2 * BPS];
-  const int L = dst[-1 + 3 * BPS];
-  const int X = dst[-1 - BPS];
-  const int A = dst[0 - BPS];
-  const int B = dst[1 - BPS];
-  const int C = dst[2 - BPS];
-
-  DST(0, 0) = DST(2, 1) = AVG2(I, X);
-  DST(0, 1) = DST(2, 2) = AVG2(J, I);
-  DST(0, 2) = DST(2, 3) = AVG2(K, J);
-  DST(0, 3)             = AVG2(L, K);
-
-  DST(3, 0)             = AVG3(A, B, C);
-  DST(2, 0)             = AVG3(X, A, B);
-  DST(1, 0) = DST(3, 1) = AVG3(I, X, A);
-  DST(1, 1) = DST(3, 2) = AVG3(J, I, X);
-  DST(1, 2) = DST(3, 3) = AVG3(K, J, I);
-  DST(1, 3)             = AVG3(L, K, J);
-}
+void HD4_C(uint8_t* dst);
 
 #undef DST
 #undef AVG3
