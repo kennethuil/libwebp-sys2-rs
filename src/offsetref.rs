@@ -1,4 +1,4 @@
-use std::{ops::{Index, IndexMut, Range, RangeFrom}, slice::ChunksExactMut};
+use std::{ops::{Index, IndexMut, Range, RangeFrom}, slice::{ChunksExactMut, ChunksMut}};
 
 use bytemuck::TransparentWrapper;
 
@@ -96,6 +96,12 @@ impl<T, const SIZE: usize, const ZERO: isize> OffsetArray<T, SIZE, ZERO> {
     // -ZERO (self.arr[0]).
     pub fn chunks_exact_mut(&mut self, chunk_size: usize) -> ChunksExactMut<'_, T> {
         self.arr.chunks_exact_mut(chunk_size)
+    }
+
+        // Passthrough to arr.chunks_mut.  Yields regular slice refs starting at
+    // -ZERO (self.arr[0]).
+    pub fn chunks_mut(&mut self, chunk_size: usize) -> ChunksMut<'_, T> {
+        self.arr.chunks_mut(chunk_size)
     }
 
     // Passthrough to arr.split_at_mut.  Yields regular slice refs.
