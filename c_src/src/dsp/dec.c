@@ -148,59 +148,17 @@ VP8PredFunc VP8PredLuma4[NUM_BMODES];
 // Chroma
 
 #if !WEBP_NEON_OMIT_C_CODE
-static void VE8uv_C(uint8_t* dst) {    // vertical
-  int j;
-  for (j = 0; j < 8; ++j) {
-    memcpy(dst + j * BPS, dst - BPS, 8);
-  }
-}
+void VE8uv_C(uint8_t* dst);
 
-static void HE8uv_C(uint8_t* dst) {    // horizontal
-  int j;
-  for (j = 0; j < 8; ++j) {
-    memset(dst, dst[-1], 8);
-    dst += BPS;
-  }
-}
+void HE8uv_C(uint8_t* dst);
 
-// helper for chroma-DC predictions
-static WEBP_INLINE void Put8x8uv(uint8_t value, uint8_t* dst) {
-  int j;
-  for (j = 0; j < 8; ++j) {
-    memset(dst + j * BPS, value, 8);
-  }
-}
+void DC8uv_C(uint8_t* dst);
 
-static void DC8uv_C(uint8_t* dst) {     // DC
-  int dc0 = 8;
-  int i;
-  for (i = 0; i < 8; ++i) {
-    dc0 += dst[i - BPS] + dst[-1 + i * BPS];
-  }
-  Put8x8uv(dc0 >> 4, dst);
-}
+void DC8uvNoLeft_C(uint8_t* dst);
 
-static void DC8uvNoLeft_C(uint8_t* dst) {   // DC with no left samples
-  int dc0 = 4;
-  int i;
-  for (i = 0; i < 8; ++i) {
-    dc0 += dst[i - BPS];
-  }
-  Put8x8uv(dc0 >> 3, dst);
-}
+void DC8uvNoTop_C(uint8_t* dst);
 
-static void DC8uvNoTop_C(uint8_t* dst) {  // DC with no top samples
-  int dc0 = 4;
-  int i;
-  for (i = 0; i < 8; ++i) {
-    dc0 += dst[-1 + i * BPS];
-  }
-  Put8x8uv(dc0 >> 3, dst);
-}
-
-static void DC8uvNoTopLeft_C(uint8_t* dst) {    // DC with nothing
-  Put8x8uv(0x80, dst);
-}
+void DC8uvNoTopLeft_C(uint8_t* dst);
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 VP8PredFunc VP8PredChroma8[NUM_B_DC_MODES];

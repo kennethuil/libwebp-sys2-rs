@@ -396,6 +396,120 @@ fn hd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Down
     assign(&mut dst[0..], [(1, 3)],         avg3(l, k, j));
 }
 
+//------------------------------------------------------------------------------
+// Chroma
+
+fn ve8_uv(dst: &mut OffsetArray<u8, {8*UBPS+8}, {BPS}>) {    // vertical
+    let (src, dst) = dst.split_at_mut(0);
+    let src = &src[0..8];
+    for chunk in dst.chunks_exact_mut(8).step_by(4) {
+        chunk.copy_from_slice(src);
+    }
+}
+
+fn he8_uv(dst: &mut OffsetArray<u8, {7*UBPS+9},1>) {    // horizontal
+    for chunk in dst.chunks_exact_mut(UBPS) {
+        let v = chunk[0];
+        chunk[1..9].fill(v);
+    }
+    let v = dst[7*BPS-1];
+    dst[7*BPS..].fill(v);
+}
+
+fn put_8x8_uv(v: u8, dst: &mut [u8; UBPS*7+8]) {
+    for chunk in dst.chunks_exact_mut(8).step_by(4) {
+        chunk.fill(v);
+    }
+}
+
+fn dc8_uv(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {  // DC
+    let mut dc0 = 8;
+    for i in 0..8 {
+        dc0 += (dst[i-BPS] as u32) + (dst[-1 + i * BPS] as u32);
+    }
+    put_8x8_uv((dc0 >> 4) as u8, (&mut dst[0..]).try_into().unwrap());
+}
+
+fn dc8_uv_no_left(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {   // DC with no left samples
+    let mut dc0 = 4;
+    for i in 0..8 {
+        dc0 += dst[i - BPS] as u32;
+    }
+    put_8x8_uv((dc0 >> 3) as u8, (&mut dst[0..]).try_into().unwrap());
+}
+
+fn dc8_uv_no_top(dst: &mut OffsetArray<u8, {UBPS*7+9}, 1>) {  // DC with no top samples
+    let mut dc0 = 4;
+    for i in 0..8 {
+        dc0 += dst[-1 + i * BPS] as u32;
+    }
+    put_8x8_uv((dc0 >> 3) as u8, (&mut dst[0..]).try_into().unwrap());
+}
+
+fn dc8_uv_no_top_left(dst: &mut [u8; UBPS*7+8]) {  // DC with nothing
+    put_8x8_uv(0x80, dst);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC8uvNoTopLeft_C(dst: *mut u8) {
+    let dst_arr = &mut *(dst as *mut [u8; UBPS*7+8]);
+    dc8_uv_no_top_left(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC8uvNoTop_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    dc8_uv_no_top(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC8uvNoLeft_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    dc8_uv_no_left(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DC8uv_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    dc8_uv(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HE8uv_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    he8_uv(dst_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VE8uv_C(dst: *mut u8) {
+    let dst_arr = OffsetArray::from_zero_mut_ptr(dst);
+    ve8_uv(dst_arr);
+}
+
 #[cfg_attr(
     feature = "__doc_cfg",
     doc(cfg(all(feature = "demux", feature = "0_5")))
