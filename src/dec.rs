@@ -1,8 +1,8 @@
 use std::os::raw::*;
 use std::convert::TryInto;
 use byteorder::{ByteOrder, LittleEndian};
-use crate::offsetref::{OffsetArray};
-use crate::dec_clip_tables::VP8_KCLIP1;
+use crate::offsetref::{OffsetArray, OffsetSliceRefMut};
+use crate::dec_clip_tables::{VP8_KABS0, VP8_KCLIP1, VP8_KSCLIP1, VP8_KSCLIP2};
 
 const BPS: isize = 32;
 const UBPS: usize = BPS as usize;
@@ -448,6 +448,267 @@ fn dc8_uv_no_top(dst: &mut OffsetArray<u8, {UBPS*7+9}, 1>) {  // DC with no top 
 
 fn dc8_uv_no_top_left(dst: &mut [u8; UBPS*7+8]) {  // DC with nothing
     put_8x8_uv(0x80, dst);
+}
+
+//------------------------------------------------------------------------------
+// Edge filtering functions
+
+// 4 pixels in, 2 pixels out
+// p: (-2*step)..(step+1)
+fn do_filter_2(p: &mut OffsetSliceRefMut<u8>, step: isize) {
+    let p1 = p[-2*step] as isize;
+    let p0 = p[-step] as isize;
+    let q0 = p[0] as isize;
+    let q1 = p[step] as isize;
+    let a = 3 * (q0 - p0) + VP8_KSCLIP1[p1 - q1] as isize; // in [-893,892]
+    let a1 = VP8_KSCLIP2[(a + 4) >> 3] as isize;           // in [-16,15]
+    let a2 = VP8_KSCLIP2[(a + 3) >> 3] as isize;
+    p[-step] = VP8_KCLIP1[p0 + a2];
+    p[    0] = VP8_KCLIP1[q0 - a1];
+}
+
+// 4 pixels in, 4 pixels out
+// p: (-2*step)..(step+1)
+fn do_filter_4(p: &mut OffsetSliceRefMut<u8>, step: isize) {
+    let p1 = p[-2*step] as isize;
+    let p0 = p[-step] as isize;
+    let q0 = p[0] as isize;
+    let q1 = p[step] as isize;
+    let a = 3 * (q0 - p0);
+    let a1 = VP8_KSCLIP2[(a + 4) >> 3] as isize;
+    let a2 = VP8_KSCLIP2[(a + 3) >> 3] as isize;
+    let a3 = (a1 + 1) >> 1;
+    p[-2*step] = VP8_KCLIP1[p1 + a3];
+    p[-  step] = VP8_KCLIP1[p0 + a2];
+    p[      0] = VP8_KCLIP1[q0 - a1];
+    p[   step] = VP8_KCLIP1[q1 - a3];
+}
+
+// 6 pixels in, 6 pixels out
+// p: (-3*step)..(2*step+1)
+fn do_filter_6(p: &mut OffsetSliceRefMut<u8>, step: isize) {
+    let p2 = p[-3*step] as isize;
+    let p1 = p[-2*step] as isize;
+    let p0 = p[-step] as isize;
+    let q0 = p[0] as isize;
+    let q1 = p[step] as isize;
+    let q2 = p[2*step] as isize;
+    let a = VP8_KSCLIP1[3 * (q0 - p0) + (VP8_KSCLIP1[p1 - q1] as isize)] as isize;
+    // a is in [-128,127], a1 in [-27,27], a2 in [-18,18] and a3 in [-9,9]
+    let a1 = (27 * a + 63) >> 7;  // eq. to ((3 * a + 7) * 9) >> 7
+    let a2 = (18 * a + 63) >> 7;  // eq. to ((2 * a + 7) * 9) >> 7
+    let a3 = ( 9 * a + 63) >> 7;  // eq. to ((1 * a + 7) * 9) >> 7
+    p[-3*step] = VP8_KCLIP1[p2 + a3];
+    p[-2*step] = VP8_KCLIP1[p1 + a2];
+    p[-  step] = VP8_KCLIP1[p0 + a1];
+    p[      0] = VP8_KCLIP1[q0 - a1];
+    p[   step] = VP8_KCLIP1[q1 - a2];
+    p[ 2*step] = VP8_KCLIP1[q2 - a3];
+}
+
+// p: (-2*step)..(step+1)
+fn hev(p: &mut OffsetSliceRefMut<u8>, step: isize, thresh: u8) -> bool {
+    let p1 = p[-2*step] as isize;
+    let p0 = p[-step] as isize;
+    let q0 = p[0] as isize;
+    let q1 = p[step] as isize;
+    VP8_KABS0[p1 - p0] > thresh || VP8_KABS0[q1 - q0] > thresh
+}
+
+// p: (-2*step)..(step+1)
+fn needs_filter(p: &mut OffsetSliceRefMut<u8>, step: isize, t: u32) -> bool {
+    let p1 = p[-2 * step] as isize;
+    let p0 = p[-step] as isize;
+    let q0 = p[0] as isize;
+    let q1 = p[step] as isize;
+    (4 * (VP8_KABS0[p0 - q0] as u32) + (VP8_KABS0[p1 - q1] as u32)) <= t
+}
+
+// p: (-4*step)..(3*step+1)
+fn needs_filter_2(p: &mut OffsetSliceRefMut<u8>, step: isize, t: u32, it: u8) -> bool {
+    let p3 = p[-4 * step] as isize;
+    let p2 = p[-3 * step] as isize;
+    let p1 = p[-2 * step] as isize;
+    let p0 = p[-step] as isize;
+    let q0 = p[0] as isize;
+    let q1 = p[step] as isize;
+    let q2 = p[2 * step] as isize;
+    let q3 = p[3 * step] as isize;
+    if (4 * (VP8_KABS0[p0 - q0] as u32) + (VP8_KABS0[p1 - q1] as u32)) > t {
+        return false;
+    }
+    VP8_KABS0[p3 - p2] <= it && VP8_KABS0[p2 - p1] <= it &&
+        VP8_KABS0[p1 - p0] <= it && VP8_KABS0[q3 - q2] <= it &&
+        VP8_KABS0[q2 - q1] <= it && VP8_KABS0[q1 - q0] <= it
+}
+
+//------------------------------------------------------------------------------
+// Simple In-loop filtering (Paragraph 15.2)
+
+// p: (-2*stride)..(stride+16)
+fn simple_v_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+    let thresh2 = 2 * thresh + 1;
+    for i in 0..16 {
+        if needs_filter(&mut (p.with_offset(i)), stride, thresh2) {
+            do_filter_2(&mut (p.with_offset(i)), stride);
+        }
+    }
+}
+
+// p: (2*stride)..(13*stride+16)
+fn simple_v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+    let mut p = p.with_offset(0);
+
+    for _ in 0..3 {
+        p.move_zero(4 * stride);
+        simple_v_filter_16(&mut p, stride, thresh);
+    }
+}
+
+// p: (-2)..(15*stride+2)
+fn simple_h_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+    let thresh2 = 2 * thresh + 1;
+    for i in 0..16 {
+        if needs_filter(&mut (p.with_offset(i * stride)), 1, thresh2) {
+            do_filter_2(&mut (p.with_offset(i * stride)), 1);
+        }
+    }
+}
+
+// p: 4..(15*stride+12)
+fn simple_h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+    let mut p = p.with_offset(0);
+
+    for _ in 0..3 {
+        p.move_zero(4);
+        simple_h_filter_16(&mut p, stride, thresh);
+    }
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn SimpleVFilter16i_C(p: *mut u8, stride: c_int, thresh: c_uint) {
+    let stride = stride as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, 2*stride, 
+        13*stride+16);
+    simple_v_filter_16i(&mut dst_arr, stride, thresh);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn SimpleHFilter16_C(p: *mut u8, stride: c_int, thresh: c_uint) {
+    let stride = stride as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -2, 
+        15*stride+2);
+    simple_h_filter_16(&mut dst_arr, stride, thresh);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn SimpleHFilter16i_C(p: *mut u8, stride: c_int, thresh: c_uint) {
+    let stride = stride as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, 2, 
+        15*stride+14);
+    simple_h_filter_16i(&mut dst_arr, stride, thresh);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn SimpleVFilter16_C(p: *mut u8, stride: c_int, thresh: c_uint) {
+    let stride = stride as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -2*stride, 
+        stride+16);
+    simple_v_filter_16(&mut dst_arr, stride, thresh);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn NeedsFilter2_C(p: *mut u8, step: c_int, t: c_uint, it: c_uint) -> c_int {
+    let step = step as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -4*step, 3*step+1);
+    if needs_filter_2(&mut dst_arr, step, t as u32, it as u8) {
+        1
+    } else {
+        0
+    }
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn NeedsFilter_C(p: *mut u8, step: c_int, t: c_uint) -> c_int {
+    let step = step as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -2*step, step+1);
+    if needs_filter(&mut dst_arr, step, t as u32) {
+        1
+    } else {
+        0
+    }
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn Hev(p: *mut u8, step: c_int, thresh: c_int) -> c_int {
+    let step = step as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -2*step, step+1);
+    if hev(&mut dst_arr, step, thresh as u8) {
+        1
+    } else {
+        0
+    }
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DoFilter6_C(p: *mut u8, step: c_int) {
+    let step = step as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -3*step, 2*step+1);
+    do_filter_6(&mut dst_arr, step);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DoFilter4_C(p: *mut u8, step: c_int) {
+    let step = step as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -2*step, step+1);
+    do_filter_4(&mut dst_arr, step);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn DoFilter2_C(p: *mut u8, step: c_int) {
+    let step = step as isize;
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -2*step, step+1);
+    do_filter_2(&mut dst_arr, step);
 }
 
 #[cfg_attr(

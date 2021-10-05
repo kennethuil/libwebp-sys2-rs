@@ -168,110 +168,38 @@ VP8PredFunc VP8PredChroma8[NUM_B_DC_MODES];
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 // 4 pixels in, 2 pixels out
-static WEBP_INLINE void DoFilter2_C(uint8_t* p, int step) {
-  const int p1 = p[-2*step], p0 = p[-step], q0 = p[0], q1 = p[step];
-  const int a = 3 * (q0 - p0) + VP8ksclip1[p1 - q1];  // in [-893,892]
-  const int a1 = VP8ksclip2[(a + 4) >> 3];            // in [-16,15]
-  const int a2 = VP8ksclip2[(a + 3) >> 3];
-  p[-step] = VP8kclip1[p0 + a2];
-  p[    0] = VP8kclip1[q0 - a1];
-}
+void DoFilter2_C(uint8_t* p, int step);
 
 // 4 pixels in, 4 pixels out
-static WEBP_INLINE void DoFilter4_C(uint8_t* p, int step) {
-  const int p1 = p[-2*step], p0 = p[-step], q0 = p[0], q1 = p[step];
-  const int a = 3 * (q0 - p0);
-  const int a1 = VP8ksclip2[(a + 4) >> 3];
-  const int a2 = VP8ksclip2[(a + 3) >> 3];
-  const int a3 = (a1 + 1) >> 1;
-  p[-2*step] = VP8kclip1[p1 + a3];
-  p[-  step] = VP8kclip1[p0 + a2];
-  p[      0] = VP8kclip1[q0 - a1];
-  p[   step] = VP8kclip1[q1 - a3];
-}
+void DoFilter4_C(uint8_t* p, int step);
 
 // 6 pixels in, 6 pixels out
-static WEBP_INLINE void DoFilter6_C(uint8_t* p, int step) {
-  const int p2 = p[-3*step], p1 = p[-2*step], p0 = p[-step];
-  const int q0 = p[0], q1 = p[step], q2 = p[2*step];
-  const int a = VP8ksclip1[3 * (q0 - p0) + VP8ksclip1[p1 - q1]];
-  // a is in [-128,127], a1 in [-27,27], a2 in [-18,18] and a3 in [-9,9]
-  const int a1 = (27 * a + 63) >> 7;  // eq. to ((3 * a + 7) * 9) >> 7
-  const int a2 = (18 * a + 63) >> 7;  // eq. to ((2 * a + 7) * 9) >> 7
-  const int a3 = (9  * a + 63) >> 7;  // eq. to ((1 * a + 7) * 9) >> 7
-  p[-3*step] = VP8kclip1[p2 + a3];
-  p[-2*step] = VP8kclip1[p1 + a2];
-  p[-  step] = VP8kclip1[p0 + a1];
-  p[      0] = VP8kclip1[q0 - a1];
-  p[   step] = VP8kclip1[q1 - a2];
-  p[ 2*step] = VP8kclip1[q2 - a3];
-}
+void DoFilter6_C(uint8_t* p, int step);
 
-static WEBP_INLINE int Hev(const uint8_t* p, int step, int thresh) {
-  const int p1 = p[-2*step], p0 = p[-step], q0 = p[0], q1 = p[step];
-  return (VP8kabs0[p1 - p0] > thresh) || (VP8kabs0[q1 - q0] > thresh);
-}
+int Hev(const uint8_t* p, int step, int thresh);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 #if !WEBP_NEON_OMIT_C_CODE
-static WEBP_INLINE int NeedsFilter_C(const uint8_t* p, int step, int t) {
-  const int p1 = p[-2 * step], p0 = p[-step], q0 = p[0], q1 = p[step];
-  return ((4 * VP8kabs0[p0 - q0] + VP8kabs0[p1 - q1]) <= t);
-}
+int NeedsFilter_C(const uint8_t* p, int step, int t);
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-static WEBP_INLINE int NeedsFilter2_C(const uint8_t* p,
-                                      int step, int t, int it) {
-  const int p3 = p[-4 * step], p2 = p[-3 * step], p1 = p[-2 * step];
-  const int p0 = p[-step], q0 = p[0];
-  const int q1 = p[step], q2 = p[2 * step], q3 = p[3 * step];
-  if ((4 * VP8kabs0[p0 - q0] + VP8kabs0[p1 - q1]) > t) return 0;
-  return VP8kabs0[p3 - p2] <= it && VP8kabs0[p2 - p1] <= it &&
-         VP8kabs0[p1 - p0] <= it && VP8kabs0[q3 - q2] <= it &&
-         VP8kabs0[q2 - q1] <= it && VP8kabs0[q1 - q0] <= it;
-}
+int NeedsFilter2_C(const uint8_t* p,
+                                      int step, int t, int it);
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 //------------------------------------------------------------------------------
 // Simple In-loop filtering (Paragraph 15.2)
 
 #if !WEBP_NEON_OMIT_C_CODE
-static void SimpleVFilter16_C(uint8_t* p, int stride, int thresh) {
-  int i;
-  const int thresh2 = 2 * thresh + 1;
-  for (i = 0; i < 16; ++i) {
-    if (NeedsFilter_C(p + i, stride, thresh2)) {
-      DoFilter2_C(p + i, stride);
-    }
-  }
-}
+void SimpleVFilter16_C(uint8_t* p, int stride, int thresh);
 
-static void SimpleHFilter16_C(uint8_t* p, int stride, int thresh) {
-  int i;
-  const int thresh2 = 2 * thresh + 1;
-  for (i = 0; i < 16; ++i) {
-    if (NeedsFilter_C(p + i * stride, 1, thresh2)) {
-      DoFilter2_C(p + i * stride, 1);
-    }
-  }
-}
+void SimpleHFilter16_C(uint8_t* p, int stride, int thresh);
 
-static void SimpleVFilter16i_C(uint8_t* p, int stride, int thresh) {
-  int k;
-  for (k = 3; k > 0; --k) {
-    p += 4 * stride;
-    SimpleVFilter16_C(p, stride, thresh);
-  }
-}
+void SimpleVFilter16i_C(uint8_t* p, int stride, int thresh);
 
-static void SimpleHFilter16i_C(uint8_t* p, int stride, int thresh) {
-  int k;
-  for (k = 3; k > 0; --k) {
-    p += 4;
-    SimpleHFilter16_C(p, stride, thresh);
-  }
-}
+void SimpleHFilter16i_C(uint8_t* p, int stride, int thresh);
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 //------------------------------------------------------------------------------

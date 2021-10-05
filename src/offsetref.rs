@@ -1,4 +1,4 @@
-use std::{ops::{Index, IndexMut, Range, RangeFrom}, slice::{ChunksExactMut, ChunksMut}};
+use std::{ops::{Index, IndexMut, Range, RangeFrom}, slice::{self, ChunksExactMut, ChunksMut}};
 
 use bytemuck::TransparentWrapper;
 
@@ -35,6 +35,7 @@ pub struct OffsetSliceRefMut<'a, T> {
 }
 
 impl<T> OffsetSliceRefMut<'_, T> {
+    #[allow(dead_code)]
     pub fn new(slice: &mut [T], zero: isize) -> OffsetSliceRefMut<T> {
         OffsetSliceRefMut {
             slice,
@@ -42,6 +43,7 @@ impl<T> OffsetSliceRefMut<'_, T> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_offset<'b, 'c>(&'c mut self, offset: isize) -> OffsetSliceRefMut<'b, T> where 'c: 'b {
         OffsetSliceRefMut{slice: &mut self.slice, zero: self.zero + offset}
     }
@@ -53,8 +55,21 @@ impl<T> OffsetSliceRefMut<'_, T> {
     // as the return value is live, and we can't do ref = ref.with_offset() in a loop because replacing
     // the original while the replacement is live is forbidden.
     // So to support reslicing in a loop, we must support updating in-place
+    #[allow(dead_code)]
     pub fn move_zero(&mut self, offset: isize) {
         self.zero += offset;
+    }
+
+    // Safety: max_index must be greater than min_index, ptr must point to the zero index of a 
+    // span of memory that is valid & uniquely referenced from min_index to max_index
+    pub unsafe fn from_zero_mut_ptr<'a>(ptr: *mut T, min_index: isize, one_plus_max_index: isize)
+        -> OffsetSliceRefMut<'a, T> {
+        let size = one_plus_max_index - min_index;
+        let p_slice = ptr.offset(min_index);
+        OffsetSliceRefMut {
+            slice: slice::from_raw_parts_mut(p_slice, size as usize),
+            zero: -min_index,
+        }
     }
 
 }
