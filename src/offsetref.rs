@@ -55,6 +55,7 @@ impl<T> OffsetSliceRefMut<'_, T> {
     // as the return value is live, and we can't do ref = ref.with_offset() in a loop because replacing
     // the original while the replacement is live is forbidden.
     // So to support reslicing in a loop, we must support updating in-place
+    // TODO: using this at multiple levels of the callstack is a footgun.  Do better!
     #[allow(dead_code)]
     pub fn move_zero(&mut self, offset: isize) {
         self.zero += offset;
@@ -72,6 +73,10 @@ impl<T> OffsetSliceRefMut<'_, T> {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn as_ptr_range(&self) -> Range<*const T> {
+        self.slice.as_ptr_range()
+    }
 }
 
 impl<T> Index<isize> for OffsetSliceRefMut<'_, T> {

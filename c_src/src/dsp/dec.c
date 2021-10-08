@@ -206,106 +206,60 @@ void SimpleHFilter16i_C(uint8_t* p, int stride, int thresh);
 // Complex In-loop filtering (Paragraph 15.3)
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-static WEBP_INLINE void FilterLoop26_C(uint8_t* p,
+void FilterLoop26_C(uint8_t* p,
                                        int hstride, int vstride, int size,
                                        int thresh, int ithresh,
-                                       int hev_thresh) {
-  const int thresh2 = 2 * thresh + 1;
-  while (size-- > 0) {
-    if (NeedsFilter2_C(p, hstride, thresh2, ithresh)) {
-      if (Hev(p, hstride, hev_thresh)) {
-        DoFilter2_C(p, hstride);
-      } else {
-        DoFilter6_C(p, hstride);
-      }
-    }
-    p += vstride;
-  }
-}
+                                       int hev_thresh);
 
-static WEBP_INLINE void FilterLoop24_C(uint8_t* p,
+void FilterLoop24_C(uint8_t* p,
                                        int hstride, int vstride, int size,
                                        int thresh, int ithresh,
-                                       int hev_thresh) {
-  const int thresh2 = 2 * thresh + 1;
-  while (size-- > 0) {
-    if (NeedsFilter2_C(p, hstride, thresh2, ithresh)) {
-      if (Hev(p, hstride, hev_thresh)) {
-        DoFilter2_C(p, hstride);
-      } else {
-        DoFilter4_C(p, hstride);
-      }
-    }
-    p += vstride;
-  }
-}
+                                       int hev_thresh);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 #if !WEBP_NEON_OMIT_C_CODE
 // on macroblock edges
-static void VFilter16_C(uint8_t* p, int stride,
-                        int thresh, int ithresh, int hev_thresh) {
-  FilterLoop26_C(p, stride, 1, 16, thresh, ithresh, hev_thresh);
-}
+void VFilter16_C(uint8_t* p, int stride,
+                        int thresh, int ithresh, int hev_thresh);
 
-static void HFilter16_C(uint8_t* p, int stride,
-                        int thresh, int ithresh, int hev_thresh) {
-  FilterLoop26_C(p, 1, stride, 16, thresh, ithresh, hev_thresh);
-}
+void HFilter16_C(uint8_t* p, int stride,
+                        int thresh, int ithresh, int hev_thresh);
 
 // on three inner edges
-static void VFilter16i_C(uint8_t* p, int stride,
-                         int thresh, int ithresh, int hev_thresh) {
-  int k;
-  for (k = 3; k > 0; --k) {
-    p += 4 * stride;
-    FilterLoop24_C(p, stride, 1, 16, thresh, ithresh, hev_thresh);
-  }
-}
+void VFilter16i_C(uint8_t* p, int stride,
+                         int thresh, int ithresh, int hev_thresh);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-static void HFilter16i_C(uint8_t* p, int stride,
-                         int thresh, int ithresh, int hev_thresh) {
-  int k;
-  for (k = 3; k > 0; --k) {
-    p += 4;
-    FilterLoop24_C(p, 1, stride, 16, thresh, ithresh, hev_thresh);
-  }
-}
+void HFilter16i_C(uint8_t* p, int stride,
+                         int thresh, int ithresh, int hev_thresh);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 #if !WEBP_NEON_OMIT_C_CODE
 // 8-pixels wide variant, for chroma filtering
-static void VFilter8_C(uint8_t* u, uint8_t* v, int stride,
-                       int thresh, int ithresh, int hev_thresh) {
-  FilterLoop26_C(u, stride, 1, 8, thresh, ithresh, hev_thresh);
-  FilterLoop26_C(v, stride, 1, 8, thresh, ithresh, hev_thresh);
-}
+void VFilter8_C(uint8_t* u, uint8_t* v, int stride,
+                       int thresh, int ithresh, int hev_thresh);
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-static void HFilter8_C(uint8_t* u, uint8_t* v, int stride,
-                       int thresh, int ithresh, int hev_thresh) {
-  FilterLoop26_C(u, 1, stride, 8, thresh, ithresh, hev_thresh);
-  FilterLoop26_C(v, 1, stride, 8, thresh, ithresh, hev_thresh);
-}
+void HFilter8_C(uint8_t* u, uint8_t* v, int stride,
+                       int thresh, int ithresh, int hev_thresh);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 #if !WEBP_NEON_OMIT_C_CODE
-static void VFilter8i_C(uint8_t* u, uint8_t* v, int stride,
-                        int thresh, int ithresh, int hev_thresh) {
-  FilterLoop24_C(u + 4 * stride, stride, 1, 8, thresh, ithresh, hev_thresh);
-  FilterLoop24_C(v + 4 * stride, stride, 1, 8, thresh, ithresh, hev_thresh);
-}
+void VFilter8i_C(uint8_t* u, uint8_t* v, int stride,
+                        int thresh, int ithresh, int hev_thresh);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-static void HFilter8i_C(uint8_t* u, uint8_t* v, int stride,
-                        int thresh, int ithresh, int hev_thresh) {
-  FilterLoop24_C(u + 4, 1, stride, 8, thresh, ithresh, hev_thresh);
-  FilterLoop24_C(v + 4, 1, stride, 8, thresh, ithresh, hev_thresh);
-}
+void HFilter8i_C(uint8_t* u, uint8_t* v, int stride,
+                        int thresh, int ithresh, int hev_thresh);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 //------------------------------------------------------------------------------

@@ -585,6 +585,271 @@ fn simple_h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32
     }
 }
 
+//------------------------------------------------------------------------------
+// Complex In-loop filtering (Paragraph 15.3)
+
+// p: (-4*hstride)..((3*hstride) + vstride*(size-1))
+fn filter_loop_26(p: &mut OffsetSliceRefMut<u8>,
+                hstride: isize, vstride: isize, size: u32,
+                thresh: u32, ithresh: u8, hev_thresh:u8) {
+    let thresh2 = 2 * thresh + 1;
+    for _ in 0..size {
+        // p: (-4*step)..(3*step+1)
+        if needs_filter_2(p, hstride, thresh2, ithresh) {
+            // p: (-2*step)..(step+1)
+            if hev(p, hstride, hev_thresh) {
+                // p: (-2*step)..(step+1)
+                do_filter_2(p, hstride);
+            } else {
+                // p: (-3*step)..(2*step+1)
+                do_filter_6(p, hstride);
+            }
+        }
+        p.move_zero(vstride);
+    }
+}
+
+// p: (-4*hstride)..((3*hstride) + vstride*(size-1))
+fn filter_loop_24(p: &mut OffsetSliceRefMut<u8>,
+                hstride: isize, vstride: isize, size: u32,
+                thresh: u32, ithresh: u8, hev_thresh:u8) {
+    let thresh2 = 2 * thresh + 1;
+    for _ in 0..size {
+        // p: (-4*step)..(3*step+1)
+        if needs_filter_2(p, hstride, thresh2, ithresh) {
+            // p: (-2*step)..(step+1)
+            if hev(p, hstride, hev_thresh) {
+                // p: (-2*step)..(step+1)
+                do_filter_2(p, hstride);
+            } else {
+                // p: (-2*step)..(step+1)
+                do_filter_4(p, hstride);
+            }
+        }
+        p.move_zero(vstride);
+    }
+}
+
+// on macroblock edges
+// p: (-4*stride)..(3*stride+16)
+fn v_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+    filter_loop_26(p, stride, 1, 16, thresh, ithresh, hev_thresh);
+}
+
+// p: -4..4+stride*15
+fn h_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+    filter_loop_26(p, 1, stride, 16, thresh, ithresh, hev_thresh);
+}
+
+// on three inner edges
+// p: 0..15*stride+16
+fn v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+    for k in 1..4 {
+        let mut new_p = p.with_offset(k * 4 * stride);
+        filter_loop_24(&mut new_p, stride, 1, 16, thresh, ithresh, hev_thresh);
+    }
+}
+
+// p: 0..16+stride*15
+fn h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+    for k in 1..4 {
+        let mut new_p = p.with_offset(k * 4);
+        filter_loop_24(&mut new_p, 1, stride, 16, thresh, ithresh, hev_thresh);
+    }
+}
+
+// 8-pixels wide variant, for chroma filtering
+// u, v: (-4*stride)..(3*stride + 8)
+fn v_filter_8(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+                thresh: u32, ithresh: u8, hev_thresh: u8) {
+    filter_loop_26(u, stride, 1, 8, thresh, ithresh, hev_thresh);
+    filter_loop_26(v, stride, 1, 8, thresh, ithresh, hev_thresh);
+}
+
+// u, v: (-4)..stride*7+4
+fn h_filter_8(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+                thresh: u32, ithresh: u8, hev_thresh: u8) {
+    filter_loop_26(u, 1, stride, 8, thresh, ithresh, hev_thresh);
+    filter_loop_26(v, 1, stride, 8, thresh, ithresh, hev_thresh);
+}
+
+// u, v: 0..(7*stride+8)
+fn v_filter_8i(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+    thresh: u32, ithresh: u8, hev_thresh: u8) {
+    filter_loop_24(&mut (u.with_offset(4*stride)), stride, 1, 8, thresh, ithresh, hev_thresh);
+    filter_loop_24(&mut (v.with_offset(4*stride)), stride, 1, 8, thresh, ithresh, hev_thresh);
+}
+
+// u, v: 0..stride*7+8
+fn h_filter_8i(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+    thresh: u32, ithresh: u8, hev_thresh: u8) {
+    filter_loop_24(&mut (u.with_offset(4)), 1, stride, 8, thresh, ithresh, hev_thresh);
+    filter_loop_24(&mut (v.with_offset(4)), 1, stride, 8, thresh, ithresh, hev_thresh);
+}
+
+//------------------------------------------------------------------------------------------
+// Temporary extern wrappers
+
+// p: 0..16+stride*15
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HFilter16i_C(p: *mut u8, stride: c_int, thresh: c_uint, ithresh: c_uint,
+    hev_thresh: c_uint) {
+    let mut p_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, 0 as isize,
+        (15*stride+16) as isize);
+    h_filter_16i(&mut p_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);        
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VFilter16i_C(p: *mut u8, stride: c_int, thresh: c_uint, ithresh: c_uint,
+    hev_thresh: c_uint) {
+    let mut p_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, 0 as isize,
+        (15*stride+16) as isize);
+    v_filter_16i(&mut p_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);        
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HFilter16_C(p: *mut u8, stride: c_int, thresh: c_uint, ithresh: c_uint,
+    hev_thresh: c_uint) {
+    let mut p_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -4,
+        (4+stride*15) as isize);
+    h_filter_16(&mut p_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);        
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VFilter16_C(p: *mut u8, stride: c_int, thresh: c_uint, ithresh: c_uint,
+    hev_thresh: c_uint) {
+    let mut p_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, (-4*stride) as isize,
+        (3*stride+16) as isize);
+    v_filter_16(&mut p_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);        
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HFilter8i_C(u: *mut u8, v: *mut u8, stride: c_int, thresh: c_uint,
+    ithresh: c_uint, hev_thresh: c_uint) {
+    let mut u_arr = OffsetSliceRefMut::from_zero_mut_ptr(u, 0, 
+        (stride*7+8) as isize);
+    let mut v_arr = OffsetSliceRefMut::from_zero_mut_ptr(v,  0, 
+        (stride*7+8) as isize);
+
+    let u_range = u_arr.as_ptr_range();
+    let v_range = v_arr.as_ptr_range();
+    let overlaps = u_range.contains(&v_range.start) || v_range.contains(&u_range.start);
+    assert!(!overlaps);
+
+    h_filter_8i(&mut u_arr, &mut v_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);
+}
+
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VFilter8i_C(u: *mut u8, v: *mut u8, stride: c_int, thresh: c_uint,
+    ithresh: c_uint, hev_thresh: c_uint) {
+    let mut u_arr = OffsetSliceRefMut::from_zero_mut_ptr(u, 0, 
+        (7*stride + 8) as isize);
+    let mut v_arr = OffsetSliceRefMut::from_zero_mut_ptr(v,  0, 
+        (7*stride + 8) as isize);
+
+    let u_range = u_arr.as_ptr_range();
+    let v_range = v_arr.as_ptr_range();
+    let overlaps = u_range.contains(&v_range.start) || v_range.contains(&u_range.start);
+    assert!(!overlaps);
+
+    v_filter_8i(&mut u_arr, &mut v_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);
+}
+
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn HFilter8_C(u: *mut u8, v: *mut u8, stride: c_int, thresh: c_uint,
+    ithresh: c_uint, hev_thresh: c_uint) {
+    let mut u_arr = OffsetSliceRefMut::from_zero_mut_ptr(u, -4, 
+        (stride*7+4) as isize);
+    let mut v_arr = OffsetSliceRefMut::from_zero_mut_ptr(v,  -4, 
+        (stride*7+4) as isize);
+
+    let u_range = u_arr.as_ptr_range();
+    let v_range = v_arr.as_ptr_range();
+    let overlaps = u_range.contains(&v_range.start) || v_range.contains(&u_range.start);
+    assert!(!overlaps);
+
+    h_filter_8(&mut u_arr, &mut v_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn VFilter8_C(u: *mut u8, v: *mut u8, stride: c_int, thresh: c_uint,
+    ithresh: c_uint, hev_thresh: c_uint) {
+    let mut u_arr = OffsetSliceRefMut::from_zero_mut_ptr(u, -4*stride as isize, 
+        (3*stride + 8) as isize);
+    let mut v_arr = OffsetSliceRefMut::from_zero_mut_ptr(v,  -4*stride as isize, 
+        (3*stride + 8) as isize);
+
+    let u_range = u_arr.as_ptr_range();
+    let v_range = v_arr.as_ptr_range();
+    let overlaps = u_range.contains(&v_range.start) || v_range.contains(&u_range.start);
+    assert!(!overlaps);
+
+    v_filter_8(&mut u_arr, &mut v_arr, stride as isize, thresh, ithresh as u8, hev_thresh as u8);
+}
+
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn FilterLoop26_C(p: *mut u8,
+                                    hstride: c_int, vstride: c_int, size: c_uint,
+                                    thresh: c_uint, ithresh: c_uint, hev_thresh: c_uint) {
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -4*hstride as isize, 
+        (3*hstride + vstride*(size as i32)) as isize);
+    filter_loop_26(&mut dst_arr, hstride as isize, vstride as isize, 
+        size, thresh, ithresh as u8, hev_thresh as u8);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn FilterLoop24_C(p: *mut u8,
+                                    hstride: c_int, vstride: c_int, size: c_uint,
+                                    thresh: c_uint, ithresh: c_uint, hev_thresh: c_uint) {
+    let mut dst_arr = OffsetSliceRefMut::from_zero_mut_ptr(p, -4*hstride as isize, 
+        (3*hstride + vstride*(size as i32)) as isize);
+    filter_loop_24(&mut dst_arr, hstride as isize, vstride as isize, 
+        size, thresh, ithresh as u8, hev_thresh as u8);
+}
+
 #[cfg_attr(
     feature = "__doc_cfg",
     doc(cfg(all(feature = "demux", feature = "0_5")))
