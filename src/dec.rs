@@ -9,6 +9,8 @@ const UBPS: usize = BPS as usize;
 
 //------------------------------------------------------------------------------
 // Transforms (Paragraph 14.4)
+//  VP8Transform = TransformTwo_C;
+//  VP8TransformDC = TransformDC_C;
 
 fn mul1(a: i32) -> i32 {
     ((a * 20091) >> 16) + a
@@ -38,16 +40,38 @@ fn transform_dc(r#in: i16, dst: &mut [u8; 128]) {
     }
 }
 
-fn transformtwo(r#in: &[i16; 32], dst: &mut [u8; 132], do_two: bool) {
-    transformone((&r#in[0..16]).try_into().unwrap(),
+fn transform_dc_uv(r#in: &[i16; 64], dst: &mut [u8; 128+4*UBPS+4]) {
+    if r#in[0 * 16] != 0 {
+        transform_dc(r#in[0*16], (&mut dst[0..][..128]).try_into().unwrap());
+    }
+    if r#in[1 * 16] != 0 {
+        transform_dc(r#in[1*16], (&mut dst[4..][..128]).try_into().unwrap());
+    }
+    if r#in[2 * 16] != 0 {
+        transform_dc(r#in[2*16], (&mut dst[4*UBPS..][..128]).try_into().unwrap());
+    }
+    if r#in[3 * 16] != 0 {
+        transform_dc(r#in[3*16], (&mut dst[4*UBPS+4..]).try_into().unwrap());
+    }
+}
+
+fn transform_two(r#in: &[i16; 32], dst: &mut [u8; 132], do_two: bool) {
+    transform_one((&r#in[0..16]).try_into().unwrap(),
         (&mut dst[0..128]).try_into().unwrap());
     if do_two {
-        transformone((&r#in[16..]).try_into().unwrap(),
+        transform_one((&r#in[16..]).try_into().unwrap(),
         (&mut dst[4..]).try_into().unwrap());
     }
 }
 
-fn transformone(data: &[i16; 16], dst: &mut [u8; 128]) {
+fn transform_uv(r#in: &[i16; 64], dst: &mut [u8; 132 + 4 * UBPS]) {
+    transform_two((&r#in[0..32]).try_into().unwrap(), (&mut dst[0..132]).try_into().unwrap(),
+        true);
+    transform_two((&r#in[32..]).try_into().unwrap(), (&mut dst[4*UBPS..]).try_into().unwrap(),
+        true);
+}
+
+fn transform_one(data: &[i16; 16], dst: &mut [u8; 128]) {
     let mut c = [0; 4*4];
     let mut tmp = &mut c[..];
     let mut data = &data[..];
@@ -1246,7 +1270,7 @@ fn clip_8b(
 unsafe extern "C" fn TransformOne_C(data: *const i16, dst: *mut u8) {
     let input_arr = &*(data as *const[i16; 16]);
     let output_arr = &mut *(dst as *mut[u8; 128]);
-    transformone(input_arr, output_arr);
+    transform_one(input_arr, output_arr);
 }
 
 #[cfg_attr(
@@ -1258,7 +1282,19 @@ unsafe extern "C" fn TransformTwo_C(data: *const i16, dst: *mut u8, do_two: c_in
 
     let input_arr = &*(data as *const[i16; 32]);
     let output_arr = &mut *(dst as *mut[u8; 132]);
-    transformtwo(input_arr, output_arr, do_two != 0);
+    transform_two(input_arr, output_arr, do_two != 0);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn TransformUV_C(data: *const i16, dst: *mut u8) {
+
+    let input_arr = &*(data as *const[i16; 64]);
+    let output_arr = &mut *(dst as *mut[u8; 260]);
+    transform_uv(input_arr, output_arr);
 }
 
 #[cfg_attr(
@@ -1293,6 +1329,17 @@ unsafe extern "C" fn TransformDC_C(r#in: *const i16, dst: *mut u8) {
     let input = *r#in;
     let output_arr = &mut *(dst as *mut[u8; 128]);
     transform_dc(input, output_arr);
+}
+
+#[cfg_attr(
+    feature = "__doc_cfg",
+    doc(cfg(all(feature = "demux", feature = "0_5")))
+)]
+#[no_mangle]
+unsafe extern "C" fn TransformDCUV_C(r#in: *const i16, dst: *mut u8) {
+    let input_arr = &*(r#in as *const[i16; 64]);
+    let output_arr = &mut *(dst as *mut[u8; 260]);
+    transform_dc_uv(input_arr, output_arr);
 }
 
 #[cfg_attr(

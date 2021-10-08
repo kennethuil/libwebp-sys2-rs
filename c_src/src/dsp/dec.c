@@ -50,22 +50,14 @@ void TransformTwo_C(const int16_t* in, uint8_t* dst, int do_two);
 
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
-static void TransformUV_C(const int16_t* in, uint8_t* dst) {
-  VP8Transform(in + 0 * 16, dst, 1);
-  VP8Transform(in + 2 * 16, dst + 4 * BPS, 1);
-}
+void TransformUV_C(const int16_t* in, uint8_t* dst);
 
 #if !WEBP_NEON_OMIT_C_CODE
 void TransformDC_C(const int16_t* in, uint8_t* dst);
 
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
-static void TransformDCUV_C(const int16_t* in, uint8_t* dst) {
-  if (in[0 * 16]) VP8TransformDC(in + 0 * 16, dst);
-  if (in[1 * 16]) VP8TransformDC(in + 1 * 16, dst + 4);
-  if (in[2 * 16]) VP8TransformDC(in + 2 * 16, dst + 4 * BPS);
-  if (in[3 * 16]) VP8TransformDC(in + 3 * 16, dst + 4 * BPS + 4);
-}
+void TransformDCUV_C(const int16_t* in, uint8_t* dst);
 
 #undef STORE
 
