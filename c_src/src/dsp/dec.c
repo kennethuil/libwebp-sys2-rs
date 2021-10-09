@@ -24,27 +24,8 @@
 //------------------------------------------------------------------------------
 // Transforms (Paragraph 14.4)
 
-#define STORE(x, y, v) \
-  dst[(x) + (y) * BPS] = clip_8b(dst[(x) + (y) * BPS] + ((v) >> 3))
-
-#define STORE2(y, dc, d, c) do {    \
-  const int DC = (dc);              \
-  STORE(0, y, DC + (d));            \
-  STORE(1, y, DC + (c));            \
-  STORE(2, y, DC - (c));            \
-  STORE(3, y, DC - (d));            \
-} while (0)
-
-#define MUL1(a) ((((a) * 20091) >> 16) + (a))
-#define MUL2(a) (((a) * 35468) >> 16)
-
-
 #if !WEBP_NEON_OMIT_C_CODE
 void TransformAC3_C(const int16_t* in, uint8_t* dst);
-
-#undef MUL1
-#undef MUL2
-#undef STORE2
 
 void TransformTwo_C(const int16_t* in, uint8_t* dst, int do_two);
 
@@ -59,8 +40,6 @@ void TransformDC_C(const int16_t* in, uint8_t* dst);
 
 void TransformDCUV_C(const int16_t* in, uint8_t* dst);
 
-#undef STORE
-
 //------------------------------------------------------------------------------
 // Paragraph 14.3
 
@@ -74,13 +53,11 @@ void (*VP8TransformWHT)(const int16_t* in, int16_t* out);
 //------------------------------------------------------------------------------
 // Intra predictions
 
-#define DST(x, y) dst[(x) + (y) * BPS]
-
 #if !WEBP_NEON_OMIT_C_CODE
 
-void TM4_C(uint8_t* dst); //   { TrueMotion(dst, 4); }
-void TM8uv_C(uint8_t* dst); // { TrueMotion(dst, 8); }
-void TM16_C(uint8_t* dst); //  { TrueMotion(dst, 16); }
+void TM4_C(uint8_t* dst);
+void TM8uv_C(uint8_t* dst);
+void TM16_C(uint8_t* dst);
 
 //------------------------------------------------------------------------------
 // 16x16
@@ -104,9 +81,6 @@ VP8PredFunc VP8PredLuma16[NUM_B_DC_MODES];
 //------------------------------------------------------------------------------
 // 4x4
 
-#define AVG3(a, b, c) ((uint8_t)(((a) + 2 * (b) + (c) + 2) >> 2))
-#define AVG2(a, b) (((a) + (b) + 1) >> 1)
-
 #if !WEBP_NEON_OMIT_C_CODE
 void VE4_C(uint8_t* dst);
 
@@ -129,10 +103,6 @@ void VL4_C(uint8_t* dst);
 void HU4_C(uint8_t* dst);
 
 void HD4_C(uint8_t* dst);
-
-#undef DST
-#undef AVG3
-#undef AVG2
 
 VP8PredFunc VP8PredLuma4[NUM_BMODES];
 
@@ -159,26 +129,16 @@ VP8PredFunc VP8PredChroma8[NUM_B_DC_MODES];
 // Edge filtering functions
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-// 4 pixels in, 2 pixels out
-void DoFilter2_C(uint8_t* p, int step);
 
-// 4 pixels in, 4 pixels out
-void DoFilter4_C(uint8_t* p, int step);
-
-// 6 pixels in, 6 pixels out
-void DoFilter6_C(uint8_t* p, int step);
-
-int Hev(const uint8_t* p, int step, int thresh);
 
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 #if !WEBP_NEON_OMIT_C_CODE
-int NeedsFilter_C(const uint8_t* p, int step, int t);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-int NeedsFilter2_C(const uint8_t* p,
-                                      int step, int t, int it);
+
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
 //------------------------------------------------------------------------------
@@ -198,15 +158,6 @@ void SimpleHFilter16i_C(uint8_t* p, int stride, int thresh);
 // Complex In-loop filtering (Paragraph 15.3)
 
 #if !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
-void FilterLoop26_C(uint8_t* p,
-                                       int hstride, int vstride, int size,
-                                       int thresh, int ithresh,
-                                       int hev_thresh);
-
-void FilterLoop24_C(uint8_t* p,
-                                       int hstride, int vstride, int size,
-                                       int thresh, int ithresh,
-                                       int hev_thresh);
 
 #endif  // !WEBP_NEON_OMIT_C_CODE || WEBP_NEON_WORK_AROUND_GCC
 
@@ -282,13 +233,6 @@ VP8SimpleFilterFunc VP8SimpleHFilter16i;
 
 void (*VP8DitherCombine8x8)(const uint8_t* dither, uint8_t* dst,
                             int dst_stride);
-
-extern void VP8DspInitSSE2(void);
-extern void VP8DspInitSSE41(void);
-extern void VP8DspInitNEON(void);
-extern void VP8DspInitMIPS32(void);
-extern void VP8DspInitMIPSdspR2(void);
-extern void VP8DspInitMSA(void);
 
 WEBP_DSP_INIT_FUNC(VP8DspInit) {
   VP8InitClipTables();

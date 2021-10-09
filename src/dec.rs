@@ -7,6 +7,21 @@ use crate::dec_clip_tables::{VP8_KABS0, VP8_KCLIP1, VP8_KSCLIP1, VP8_KSCLIP2};
 const BPS: isize = 32;
 const UBPS: usize = BPS as usize;
 
+/// Get a mut reference to the first N items of the slice as an array.
+/// Panic if the slice is too small.
+fn to_array_ref_mut<T, const N: usize>(s: &mut [T]) -> &mut [T;N] {
+    // Parentheses around slice expression needed because otherwise try_into will
+    // make a temporary array (not array ref) and then &mut will make a reference to the temporary
+    // and put16 will then write to the temporary.
+    (&mut s[0..N]).try_into().unwrap()
+}
+
+/// Get a reference to the first N items of the slice as an array.
+/// Panic if the slice is too small.
+fn to_array_ref<T, const N: usize>(s: &[T]) -> &[T;N] {
+    (&s[0..N]).try_into().unwrap()
+}
+
 //------------------------------------------------------------------------------
 // Transforms (Paragraph 14.4)
 //  VP8Transform = TransformTwo_C;
@@ -42,33 +57,29 @@ fn transform_dc(r#in: i16, dst: &mut [u8; 128]) {
 
 fn transform_dc_uv(r#in: &[i16; 64], dst: &mut [u8; 128+4*UBPS+4]) {
     if r#in[0 * 16] != 0 {
-        transform_dc(r#in[0*16], (&mut dst[0..][..128]).try_into().unwrap());
+        transform_dc(r#in[0*16], to_array_ref_mut(dst));
     }
     if r#in[1 * 16] != 0 {
-        transform_dc(r#in[1*16], (&mut dst[4..][..128]).try_into().unwrap());
+        transform_dc(r#in[1*16], to_array_ref_mut(&mut dst[4..]));
     }
     if r#in[2 * 16] != 0 {
-        transform_dc(r#in[2*16], (&mut dst[4*UBPS..][..128]).try_into().unwrap());
+        transform_dc(r#in[2*16], to_array_ref_mut(&mut dst[4*UBPS..]));
     }
     if r#in[3 * 16] != 0 {
-        transform_dc(r#in[3*16], (&mut dst[4*UBPS+4..]).try_into().unwrap());
+        transform_dc(r#in[3*16], to_array_ref_mut(&mut dst[4*UBPS+4..]));
     }
 }
 
 fn transform_two(r#in: &[i16; 32], dst: &mut [u8; 132], do_two: bool) {
-    transform_one((&r#in[0..16]).try_into().unwrap(),
-        (&mut dst[0..128]).try_into().unwrap());
+    transform_one(to_array_ref(r#in), to_array_ref_mut(dst));
     if do_two {
-        transform_one((&r#in[16..]).try_into().unwrap(),
-        (&mut dst[4..]).try_into().unwrap());
+        transform_one(to_array_ref(&r#in[16..]), to_array_ref_mut(&mut dst[4..]));
     }
 }
 
 fn transform_uv(r#in: &[i16; 64], dst: &mut [u8; 132 + 4 * UBPS]) {
-    transform_two((&r#in[0..32]).try_into().unwrap(), (&mut dst[0..132]).try_into().unwrap(),
-        true);
-    transform_two((&r#in[32..]).try_into().unwrap(), (&mut dst[4*UBPS..]).try_into().unwrap(),
-        true);
+    transform_two(to_array_ref(r#in), to_array_ref_mut(dst), true);
+    transform_two(to_array_ref(&r#in[32..]), to_array_ref_mut(&mut dst[4*UBPS..]), true);
 }
 
 fn transform_one(data: &[i16; 16], dst: &mut [u8; 128]) {
@@ -219,10 +230,7 @@ fn dc16(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC
         dc = dc.wrapping_add(sum);
     }
 
-    // Parentheses around &mut dst[0..BPS*16] needed because otherwise try_into will
-    // make a temporary array (not array ref) and then &mut will make a reference to the temporary
-    // and put16 will then write to the temporary.
-    put16(((dc >> 5) & 0xff) as u8, (&mut dst[0..BPS*15+16]).try_into().unwrap());
+    put16(((dc >> 5) & 0xff) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
 fn dc16_no_top(dst: &mut OffsetArray<u8, {UBPS*15+17}, 1>) {  // DC with top samples not available
@@ -230,7 +238,7 @@ fn dc16_no_top(dst: &mut OffsetArray<u8, {UBPS*15+17}, 1>) {  // DC with top sam
     for j in 0..16 {
         dc = dc.wrapping_add(dst[-1 + j * BPS] as u32);
     }
-    put16(((dc >> 4) & 0xff) as u8, (&mut dst[0..BPS*15+16]).try_into().unwrap());
+    put16(((dc >> 4) & 0xff) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
 fn dc16_no_left(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC with left samples not available
@@ -238,7 +246,7 @@ fn dc16_no_left(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC with le
     for i in 0..16 {
         dc = dc.wrapping_add(dst[i - BPS] as u32);
     }
-    put16(((dc >> 4) & 0xff) as u8, (&mut dst[0..BPS*15+16]).try_into().unwrap());
+    put16(((dc >> 4) & 0xff) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
 fn dc16_no_top_left(dst: &mut [u8; UBPS*15+16]) {  // DC with no top and left samples
@@ -451,7 +459,7 @@ fn dc8_uv(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {  // DC
     for i in 0..8 {
         dc0 += (dst[i-BPS] as u32) + (dst[-1 + i * BPS] as u32);
     }
-    put_8x8_uv((dc0 >> 4) as u8, (&mut dst[0..]).try_into().unwrap());
+    put_8x8_uv((dc0 >> 4) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
 fn dc8_uv_no_left(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {   // DC with no left samples
@@ -459,7 +467,7 @@ fn dc8_uv_no_left(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {   // DC with no 
     for i in 0..8 {
         dc0 += dst[i - BPS] as u32;
     }
-    put_8x8_uv((dc0 >> 3) as u8, (&mut dst[0..]).try_into().unwrap());
+    put_8x8_uv((dc0 >> 3) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
 fn dc8_uv_no_top(dst: &mut OffsetArray<u8, {UBPS*7+9}, 1>) {  // DC with no top samples
@@ -467,7 +475,7 @@ fn dc8_uv_no_top(dst: &mut OffsetArray<u8, {UBPS*7+9}, 1>) {  // DC with no top 
     for i in 0..8 {
         dc0 += dst[-1 + i * BPS] as u32;
     }
-    put_8x8_uv((dc0 >> 3) as u8, (&mut dst[0..]).try_into().unwrap());
+    put_8x8_uv((dc0 >> 3) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
 fn dc8_uv_no_top_left(dst: &mut [u8; UBPS*7+8]) {  // DC with nothing
