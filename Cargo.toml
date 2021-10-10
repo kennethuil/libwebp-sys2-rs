@@ -28,6 +28,7 @@ cfg-if = "0.1.6"
 libc = "0.2.43"
 bytemuck = { version = "1.7", features = ["derive"] }
 byteorder = "1"
+no-panic = "0.1"
 
 [dev-dependencies]
 siphasher = "0.3"
@@ -57,3 +58,4 @@ vcpkg = "0.2.8"
 [profile.test]
 opt-level = 3
 #lto = "thin"
+#overflow-checks = false

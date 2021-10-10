@@ -40,33 +40,11 @@ static void Copy32b(uint8_t* const dst, const uint8_t* const src) {
   memcpy(dst, src, 4);
 }
 
-static WEBP_INLINE void DoTransform(uint32_t bits, const int16_t* const src,
-                                    uint8_t* const dst) {
-  switch (bits >> 30) {
-    case 3:
-      VP8Transform(src, dst, 0);
-      break;
-    case 2:
-      VP8TransformAC3(src, dst);
-      break;
-    case 1:
-      VP8TransformDC(src, dst);
-      break;
-    default:
-      break;
-  }
-}
+WEBP_INLINE void DoTransform(uint32_t bits, const int16_t* const src,
+                                    uint8_t* const dst);
 
-static void DoUVTransform(uint32_t bits, const int16_t* const src,
-                          uint8_t* const dst) {
-  if (bits & 0xff) {    // any non-zero coeff at all?
-    if (bits & 0xaa) {  // any non-zero AC coefficient?
-      VP8TransformUV(src, dst);   // note we don't use the AC3 variant for U/V
-    } else {
-      VP8TransformDCUV(src, dst);
-    }
-  }
-}
+void DoUVTransform(uint32_t bits, const int16_t* const src,
+                          uint8_t* const dst);
 
 static void ReconstructRow(const VP8Decoder* const dec,
                            const VP8ThreadContext* ctx) {

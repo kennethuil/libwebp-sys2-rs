@@ -1,26 +1,11 @@
 use std::os::raw::*;
-use std::convert::TryInto;
 use byteorder::{ByteOrder, LittleEndian};
+use crate::dsp::{BPS, UBPS};
 use crate::offsetref::{OffsetArray, OffsetSliceRefMut};
 use crate::dec_clip_tables::{VP8_KABS0, VP8_KCLIP1, VP8_KSCLIP1, VP8_KSCLIP2};
+use crate::array::{to_array_ref, to_array_ref_mut};
 
-const BPS: isize = 32;
-const UBPS: usize = BPS as usize;
 
-/// Get a mut reference to the first N items of the slice as an array.
-/// Panic if the slice is too small.
-fn to_array_ref_mut<T, const N: usize>(s: &mut [T]) -> &mut [T;N] {
-    // Parentheses around slice expression needed because otherwise try_into will
-    // make a temporary array (not array ref) and then &mut will make a reference to the temporary
-    // and put16 will then write to the temporary.
-    (&mut s[0..N]).try_into().unwrap()
-}
-
-/// Get a reference to the first N items of the slice as an array.
-/// Panic if the slice is too small.
-fn to_array_ref<T, const N: usize>(s: &[T]) -> &[T;N] {
-    (&s[0..N]).try_into().unwrap()
-}
 
 //------------------------------------------------------------------------------
 // Transforms (Paragraph 14.4)
@@ -46,7 +31,7 @@ fn store2(dst: &mut [u8], y: usize, dc: i32, d: i32, c: i32) {
     store(dst, 3, y, dc - d);
 }
 
-fn transform_dc(r#in: i16, dst: &mut [u8; 128]) {
+pub(crate) fn transform_dc(r#in: i16, dst: &mut [u8; 128]) {
     let dc = (r#in + 4).into();
     for i in 0..4 {
         for j in 0..4 {
@@ -55,7 +40,7 @@ fn transform_dc(r#in: i16, dst: &mut [u8; 128]) {
     }
 }
 
-fn transform_dc_uv(r#in: &[i16; 64], dst: &mut [u8; 128+4*UBPS+4]) {
+pub(crate) fn transform_dc_uv(r#in: &[i16; 64], dst: &mut [u8; 128+4*UBPS+4]) {
     if r#in[0 * 16] != 0 {
         transform_dc(r#in[0*16], to_array_ref_mut(dst));
     }
@@ -70,14 +55,14 @@ fn transform_dc_uv(r#in: &[i16; 64], dst: &mut [u8; 128+4*UBPS+4]) {
     }
 }
 
-fn transform_two(r#in: &[i16; 32], dst: &mut [u8; 132], do_two: bool) {
+pub(crate) fn transform_two(r#in: &[i16; 32], dst: &mut [u8; 132], do_two: bool) {
     transform_one(to_array_ref(r#in), to_array_ref_mut(dst));
     if do_two {
         transform_one(to_array_ref(&r#in[16..]), to_array_ref_mut(&mut dst[4..]));
     }
 }
 
-fn transform_uv(r#in: &[i16; 64], dst: &mut [u8; 132 + 4 * UBPS]) {
+pub(crate) fn transform_uv(r#in: &[i16; 64], dst: &mut [u8; 132 + 4 * UBPS]) {
     transform_two(to_array_ref(r#in), to_array_ref_mut(dst), true);
     transform_two(to_array_ref(&r#in[32..]), to_array_ref_mut(&mut dst[4*UBPS..]), true);
 }
@@ -123,7 +108,7 @@ fn transform_one(data: &[i16; 16], dst: &mut [u8; 128]) {
 }
 
 // Simplified transform when only in[0], in[1] and in[4] are non-zero
-fn transform_ac3(r#in: &[i16; 5], dst: &mut [u8; 128]) {
+pub(crate) fn transform_ac3(r#in: &[i16; 5], dst: &mut [u8; 128]) {
     let a: i32 = r#in[0] as i32 + 4;
     let c4 = mul2(r#in[4].into());
     let d4 = mul1(r#in[4].into());
@@ -138,7 +123,7 @@ fn transform_ac3(r#in: &[i16; 5], dst: &mut [u8; 128]) {
 //------------------------------------------------------------------------------
 // Paragraph 14.3
 
-fn transform_wht(r#in: &[i16; 16], out: &mut [i16; 256]) {
+pub(crate) fn transform_wht(r#in: &[i16; 16], out: &mut [i16; 256]) {
     let mut out = &mut out[..];
     let mut tmp = [0; 16];
     for i in 0..4 {
@@ -263,7 +248,7 @@ fn avg2(p1: u8, p2: u8) -> u8 {
     (((p1 as u32) + (p2 as u32) + 1) >> 1) as u8
 }
 
-fn ve4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) { // vertical
+pub(crate) fn ve4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) { // vertical
     let top = dst.with_offset(-BPS);
     let vals = [
         avg3(top[-1], top[0], top[1]),
@@ -277,7 +262,7 @@ fn ve4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) { // vertical
 }
 
 // #define DST(x, y) dst[(x) + (y) * BPS]
-fn he4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) {  // horizontal
+pub(crate) fn he4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) {  // horizontal
     // (-1-BPS)..(4*BPS)
     let a = dst[-1 - BPS];
     let b = dst[-1];
@@ -291,7 +276,7 @@ fn he4(dst: &mut OffsetArray<u8, {5*UBPS+1}, {BPS+1}>) {  // horizontal
 }
 
 
-fn dc4(dst: &mut OffsetArray<u8, {5*UBPS}, {BPS}>) { // DC
+pub(crate) fn dc4(dst: &mut OffsetArray<u8, {5*UBPS}, {BPS}>) { // DC
     let mut dc = 4;
 
     for i in 0..4 {
@@ -309,7 +294,7 @@ fn assign<const NUM_COORDS: usize>(dst: &mut [u8], xy: [(usize,usize); NUM_COORD
     }
 }
 
-fn rd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Down-right
+pub(crate) fn rd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Down-right
     let i = dst[-1 + 0 * BPS];
     let j = dst[-1 + 1 * BPS];
     let k = dst[-1 + 2 * BPS];
@@ -328,7 +313,7 @@ fn rd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Down-right
     assign(&mut dst[0..], [                        (3, 0)], avg3(d, c, b));
 }
 
-fn ld4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) { // Down-Left
+pub(crate) fn ld4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) { // Down-Left
     let a = dst[0 - BPS];
     let b = dst[1 - BPS];
     let c = dst[2 - BPS];
@@ -346,7 +331,7 @@ fn ld4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) { // Down-Left
     assign(&mut dst[0..], [                        (3, 3)], avg3(g, h, h));
 }
 
-fn vr4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Vertical-Right
+pub(crate) fn vr4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Vertical-Right
     let i = dst[-1 + 0 * BPS];
     let j = dst[-1 + 1 * BPS];
     let k = dst[-1 + 2 * BPS];
@@ -368,7 +353,7 @@ fn vr4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Vertical-Right
     assign(&mut dst[0..], [(3, 1)],         avg3(b, c, d));
 }
 
-fn vl4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) {  // Vertical-Left
+pub(crate) fn vl4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) {  // Vertical-Left
     let a = dst[0 - BPS];
     let b = dst[1 - BPS];
     let c = dst[2 - BPS];
@@ -390,7 +375,7 @@ fn vl4(dst: &mut OffsetArray<u8, {4*UBPS+4}, {BPS}>) {  // Vertical-Left
     assign(&mut dst[0..], [        (3, 3)], avg3(f, g, h));
 }
 
-fn hu4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Up
+pub(crate) fn hu4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Up
     let i = dst[-1 + 0 * BPS];
     let j = dst[-1 + 1 * BPS];
     let k = dst[-1 + 2 * BPS];
@@ -405,7 +390,7 @@ fn hu4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Up
         (0, 3), (1, 3), (2, 3), (3, 3)], l);
 }
 
-fn hd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Down
+pub(crate) fn hd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Down
     let i = dst[-1 + 0 * BPS];
     let j = dst[-1 + 1 * BPS];
     let k = dst[-1 + 2 * BPS];
@@ -431,7 +416,7 @@ fn hd4(dst: &mut OffsetArray<u8, {4*UBPS+5}, {1+BPS}>) { // Horizontal-Down
 //------------------------------------------------------------------------------
 // Chroma
 
-fn ve8_uv(dst: &mut OffsetArray<u8, {8*UBPS+8}, {BPS}>) {    // vertical
+pub(crate) fn ve8_uv(dst: &mut OffsetArray<u8, {8*UBPS+8}, {BPS}>) {    // vertical
     let (src, dst) = dst.split_at_mut(0);
     let src = &src[0..8];
     for chunk in dst.chunks_exact_mut(8).step_by(4) {
@@ -439,7 +424,7 @@ fn ve8_uv(dst: &mut OffsetArray<u8, {8*UBPS+8}, {BPS}>) {    // vertical
     }
 }
 
-fn he8_uv(dst: &mut OffsetArray<u8, {7*UBPS+9},1>) {    // horizontal
+pub(crate) fn he8_uv(dst: &mut OffsetArray<u8, {7*UBPS+9},1>) {    // horizontal
     for chunk in dst.chunks_exact_mut(UBPS) {
         let v = chunk[0];
         chunk[1..9].fill(v);
@@ -454,7 +439,7 @@ fn put_8x8_uv(v: u8, dst: &mut [u8; UBPS*7+8]) {
     }
 }
 
-fn dc8_uv(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {  // DC
+pub(crate) fn dc8_uv(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {  // DC
     let mut dc0 = 8;
     for i in 0..8 {
         dc0 += (dst[i-BPS] as u32) + (dst[-1 + i * BPS] as u32);
@@ -462,7 +447,7 @@ fn dc8_uv(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {  // DC
     put_8x8_uv((dc0 >> 4) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
-fn dc8_uv_no_left(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {   // DC with no left samples
+pub(crate) fn dc8_uv_no_left(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {   // DC with no left samples
     let mut dc0 = 4;
     for i in 0..8 {
         dc0 += dst[i - BPS] as u32;
@@ -470,7 +455,7 @@ fn dc8_uv_no_left(dst: &mut OffsetArray<u8, {UBPS*8+8}, BPS>) {   // DC with no 
     put_8x8_uv((dc0 >> 3) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
-fn dc8_uv_no_top(dst: &mut OffsetArray<u8, {UBPS*7+9}, 1>) {  // DC with no top samples
+pub(crate) fn dc8_uv_no_top(dst: &mut OffsetArray<u8, {UBPS*7+9}, 1>) {  // DC with no top samples
     let mut dc0 = 4;
     for i in 0..8 {
         dc0 += dst[-1 + i * BPS] as u32;
@@ -478,7 +463,7 @@ fn dc8_uv_no_top(dst: &mut OffsetArray<u8, {UBPS*7+9}, 1>) {  // DC with no top 
     put_8x8_uv((dc0 >> 3) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
-fn dc8_uv_no_top_left(dst: &mut [u8; UBPS*7+8]) {  // DC with nothing
+pub(crate) fn dc8_uv_no_top_left(dst: &mut [u8; UBPS*7+8]) {  // DC with nothing
     put_8x8_uv(0x80, dst);
 }
 
@@ -578,7 +563,7 @@ fn needs_filter_2(p: &mut OffsetSliceRefMut<u8>, step: isize, t: u32, it: u8) ->
 // Simple In-loop filtering (Paragraph 15.2)
 
 // p: (-2*stride)..(stride+16)
-fn simple_v_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+pub(crate) fn simple_v_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
     let thresh2 = 2 * thresh + 1;
     for i in 0..16 {
         if needs_filter(&mut (p.with_offset(i)), stride, thresh2) {
@@ -588,7 +573,7 @@ fn simple_v_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32)
 }
 
 // p: (2*stride)..(13*stride+16)
-fn simple_v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+pub(crate) fn simple_v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
     let mut p = p.with_offset(0);
 
     for _ in 0..3 {
@@ -598,7 +583,7 @@ fn simple_v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32
 }
 
 // p: (-2)..(15*stride+2)
-fn simple_h_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+pub(crate) fn simple_h_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
     let thresh2 = 2 * thresh + 1;
     for i in 0..16 {
         if needs_filter(&mut (p.with_offset(i * stride)), 1, thresh2) {
@@ -608,7 +593,7 @@ fn simple_h_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32)
 }
 
 // p: 4..(15*stride+12)
-fn simple_h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
+pub(crate) fn simple_h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32) {
     let mut p = p.with_offset(0);
 
     for _ in 0..3 {
@@ -664,18 +649,18 @@ fn filter_loop_24(p: &mut OffsetSliceRefMut<u8>,
 
 // on macroblock edges
 // p: (-4*stride)..(3*stride+16)
-fn v_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+pub(crate) fn v_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
     filter_loop_26(p, stride, 1, 16, thresh, ithresh, hev_thresh);
 }
 
 // p: -4..4+stride*15
-fn h_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+pub(crate) fn h_filter_16(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
     filter_loop_26(p, 1, stride, 16, thresh, ithresh, hev_thresh);
 }
 
 // on three inner edges
 // p: 0..15*stride+16
-fn v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+pub(crate) fn v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
     for k in 1..4 {
         let mut new_p = p.with_offset(k * 4 * stride);
         filter_loop_24(&mut new_p, stride, 1, 16, thresh, ithresh, hev_thresh);
@@ -683,7 +668,7 @@ fn v_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithre
 }
 
 // p: 0..16+stride*15
-fn h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
+pub(crate) fn h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithresh: u8, hev_thresh: u8) {
     for k in 1..4 {
         let mut new_p = p.with_offset(k * 4);
         filter_loop_24(&mut new_p, 1, stride, 16, thresh, ithresh, hev_thresh);
@@ -692,31 +677,48 @@ fn h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, thresh: u32, ithre
 
 // 8-pixels wide variant, for chroma filtering
 // u, v: (-4*stride)..(3*stride + 8)
-fn v_filter_8(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+pub(crate) fn v_filter_8(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
                 thresh: u32, ithresh: u8, hev_thresh: u8) {
     filter_loop_26(u, stride, 1, 8, thresh, ithresh, hev_thresh);
     filter_loop_26(v, stride, 1, 8, thresh, ithresh, hev_thresh);
 }
 
 // u, v: (-4)..stride*7+4
-fn h_filter_8(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+pub(crate) fn h_filter_8(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
                 thresh: u32, ithresh: u8, hev_thresh: u8) {
     filter_loop_26(u, 1, stride, 8, thresh, ithresh, hev_thresh);
     filter_loop_26(v, 1, stride, 8, thresh, ithresh, hev_thresh);
 }
 
 // u, v: 0..(7*stride+8)
-fn v_filter_8i(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+pub(crate) fn v_filter_8i(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
     thresh: u32, ithresh: u8, hev_thresh: u8) {
     filter_loop_24(&mut (u.with_offset(4*stride)), stride, 1, 8, thresh, ithresh, hev_thresh);
     filter_loop_24(&mut (v.with_offset(4*stride)), stride, 1, 8, thresh, ithresh, hev_thresh);
 }
 
 // u, v: 0..stride*7+8
-fn h_filter_8i(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
+pub(crate) fn h_filter_8i(u: &mut OffsetSliceRefMut<u8>, v: &mut OffsetSliceRefMut<u8>, stride: isize,
     thresh: u32, ithresh: u8, hev_thresh: u8) {
     filter_loop_24(&mut (u.with_offset(4)), 1, stride, 8, thresh, ithresh, hev_thresh);
     filter_loop_24(&mut (v.with_offset(4)), 1, stride, 8, thresh, ithresh, hev_thresh);
+}
+
+const VP8_DITHER_AMP_CENTER: i32 = 1 << 7;
+const VP8_DITHER_DESCALE_ROUNDER: i32 = 1 << (4 - 1);
+const VP8_DITHER_DESCALE: i32 = 4;
+
+pub(crate) fn dither_combine_8x8(dither: &[u8; 64], mut dst: &mut [u8], dst_stride: usize) {
+    let mut dither = &dither[..];
+    for _ in 0..8 {
+        for i in 0..8 {
+            let delta0: i32 = dither[i] as i32 - VP8_DITHER_AMP_CENTER;
+            let delta1 = (delta0 + VP8_DITHER_DESCALE_ROUNDER) >> VP8_DITHER_DESCALE;
+            dst[i] = clip_8b(dst[i] as i32 + delta1);
+        }
+        dst = &mut dst[dst_stride..];
+        dither = &dither[8..];
+    }
 }
 
 //------------------------------------------------------------------------------------------
@@ -1361,19 +1363,3 @@ unsafe extern "C" fn TransformWHT_C(r#in: *const i16, out: *mut i16) {
     transform_wht(input, output);
 }
 
-const VP8_DITHER_AMP_CENTER: i32 = 1 << 7;
-const VP8_DITHER_DESCALE_ROUNDER: i32 = 1 << (4 - 1);
-const VP8_DITHER_DESCALE: i32 = 4;
-
-fn dither_combine_8x8(dither: &[u8; 64], mut dst: &mut [u8], dst_stride: usize) {
-    let mut dither = &dither[..];
-    for _ in 0..8 {
-        for i in 0..8 {
-            let delta0: i32 = dither[i] as i32 - VP8_DITHER_AMP_CENTER;
-            let delta1 = (delta0 + VP8_DITHER_DESCALE_ROUNDER) >> VP8_DITHER_DESCALE;
-            dst[i] = clip_8b(dst[i] as i32 + delta1);
-        }
-        dst = &mut dst[dst_stride..];
-        dither = &dither[8..];
-    }
-}
