@@ -34,7 +34,7 @@ no-panic = "0.1"
 siphasher = "0.3"
 
 [features]
-default = []
+default = ["demux", "mux", "1_2", "static"]
 demux = []
 mux = []
 "0_5" = []
