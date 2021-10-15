@@ -489,6 +489,8 @@ int VP8ProcessRow(VP8Decoder* const dec, VP8Io* const io) {
     ReconstructRow(dec, ctx);
     ok = FinishRow(dec, io);
   } else {
+    // multithreading nonsense
+    /*
     WebPWorker* const worker = &dec->worker_;
     // Finish previous job *before* updating context
     ok &= WebPGetWorkerInterface()->Sync(worker);
@@ -517,6 +519,7 @@ int VP8ProcessRow(VP8Decoder* const dec, VP8Io* const io) {
         dec->cache_id_ = 0;
       }
     }
+    */
   }
   return ok;
 }
