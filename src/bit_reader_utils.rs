@@ -1,4 +1,4 @@
-use std::mem::size_of;
+//use std::mem::size_of;
 use libc::c_int;
 
 // The Boolean decoder needs to maintain infinite precision on the value_ field.
@@ -12,7 +12,7 @@ use libc::c_int;
 //
 // BITS can be any multiple of 8 from 8 to 56 (inclusive).
 // Pick values that fit natural register size.
-const BITS: usize = size_of::<usize>() - 8;
+//const BITS: usize = size_of::<usize>() - 8;
 // C introduces bit_t type which is basically a usize, we're just using usize
 
 #[repr(C)]

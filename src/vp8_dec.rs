@@ -4,7 +4,6 @@ use std::mem::size_of;
 
 use libc::{c_int, c_void};
 use crate::alpha_dec::ALPHDecoder;
-use crate::array::{to_array_ref, to_array_ref_mut};
 use crate::bit_reader_utils::VP8BitReader;
 use crate::VP8StatusCode;
 use crate::common_dec::{MAX_NUM_PARTITIONS, MB_FEATURE_TREE_PROBS, NUM_BANDS, NUM_CTX, NUM_MB_SEGMENTS, NUM_MODE_LF_DELTAS, NUM_PROBAS, NUM_REF_LF_DELTAS, NUM_TYPES};
@@ -208,7 +207,7 @@ enum WebPWorkerStatus {
 struct WebPWorker {
     impl_: *const c_void,
     status: WebPWorkerStatus,
-    hook: fn (*const c_void, *const c_void) -> c_int,
+    hook: extern "C" fn (*const c_void, *const c_void) -> c_int,
     data1: *const c_void,
     data2: *const c_void,
     had_error: c_int,
@@ -364,7 +363,7 @@ fn copy_32b_left(arr: &mut [u8], dst_idx: usize, src_idx: usize) {
 
 impl VP8Decoder<'_> {
     unsafe fn from_ffi(ffi: *mut VP8Decoder_FFI) -> Self {
-        println!("{:#?}", *ffi);
+        //println!("{:#?}", *ffi);
         let top_size = size_of::<VP8TopSamples>() * (*ffi).mb_w as usize;
         let cache_height = 16 + K_FILTER_EXTRA_ROWS[(*ffi).filter_type as usize] * 3 / 2;
         let cache_size = top_size * cache_height;
@@ -387,6 +386,101 @@ impl VP8Decoder<'_> {
             mb_x: (*ffi).mb_x as usize, 
             mb_y: (*ffi).mb_y as usize, 
             mb_data: slice::from_raw_parts_mut((*ffi).mb_data, (*ffi).mb_w as usize) 
+        }
+    }
+
+    fn reconstruct_macroblock(&mut self, mb_x: usize, mb_y: usize) {
+        let block = &self.mb_data[mb_x];
+
+        // Rotate in the left samples from previously decoded block. We move four
+        // pixels at a time for alignment reason, and because of in-loop filter.
+
+        if mb_x > 0 {
+            for j in 0..17 {
+                copy_32b_left(self.yuv_b, Y_OFF-UBPS + j * UBPS - 4, Y_OFF-UBPS + j * UBPS + 12);
+                //self.yuv_b.copy_within(Y_OFF - UBPS + j * UBPS + 12..Y_OFF - UBPS + j * UBPS + 16, 
+                //    Y_OFF - UBPS + j * UBPS - 4)
+            }
+            for j in 0..9 {
+                copy_32b_left(self.yuv_b, U_OFF-UBPS + j * UBPS - 4, U_OFF-UBPS + j * UBPS + 4);
+                copy_32b_left(self.yuv_b, V_OFF-UBPS + j * UBPS - 4, V_OFF-UBPS + j * UBPS + 4);
+            }
+        }
+
+
+        
+        // bring top samples into the cache
+        let top_yuv = &mut self.yuv_t[mb_x..];
+        let coeffs = &block.coeffs;
+        let mut bits = block.non_zero_y;
+
+        if mb_y > 0 {
+            self.yuv_b[Y_OFF - UBPS..][..16].copy_from_slice(&top_yuv[0].y);
+            self.yuv_b[U_OFF - UBPS..][..8].copy_from_slice(&top_yuv[0].u);
+            self.yuv_b[V_OFF - UBPS..][..8].copy_from_slice(&top_yuv[0].v);
+        }
+
+        // predict and add residuals
+        if block.is_i4x4 != 0 {    // 4x4
+            // In the C they cast it to an uint32 pointer to let them deal with it 4 bytes at a time
+            // we'll skip that and assume the optimizer will essentially do the same thing.
+            let top_right = &mut self.yuv_b[Y_OFF - UBPS + 16..];
+            if mb_y > 0 {
+                if mb_x >= self.mb_w - 1 { // on rightmost border
+                    top_right[..4].fill(top_yuv[0].y[15]);
+                } else {
+                    top_right[..4].copy_from_slice(&top_yuv[1].y[..4]);
+                }
+            }
+            // replicate the top-right pixels below
+            let to_replicate: [u8; 4] = top_right[0..4].try_into().unwrap();
+            top_right[3*4 * UBPS..][..4].copy_from_slice(&to_replicate);
+            top_right[2*4 * UBPS..][..4].copy_from_slice(&to_replicate);
+            top_right[1*4 * UBPS..][..4].copy_from_slice(&to_replicate);
+
+            // predict and add residuals for all 4x4 blocks in turn.
+            for n in 0..16 {
+                let dst_offset = Y_OFF + K_SCAN[n];
+                Self::vp8_pred_luma4(self.yuv_b, dst_offset, block.imodes[n]);
+                do_transform(bits, &coeffs[n * 16..], &mut self.yuv_b[dst_offset..]);
+                bits <<= 2;
+            }
+        } else {    // 16x16
+            let mode = Self::get_mode(mb_x, mb_y, block.imodes[0]);
+            Self::vp8_pred_luma16(self.yuv_b, Y_OFF, mode);
+            if bits != 0 {
+                for n in 0..16 {
+                    do_transform(bits, &coeffs[n * 16..], &mut self.yuv_b[Y_OFF + K_SCAN[n]..]);
+                    bits <<= 2;
+                }
+            }
+        }
+
+
+        // Chroma
+        let bits_uv = block.non_zero_uv;
+        let mode = Self::get_mode(mb_x, mb_y, block.uvmode);
+        Self::vp8_pred_chroma8(self.yuv_b, U_OFF, mode);
+        Self::vp8_pred_chroma8(self.yuv_b, V_OFF, mode);
+        do_uv_transform(bits_uv, &coeffs[16 * 16..], &mut self.yuv_b[U_OFF..]);
+        do_uv_transform(bits_uv >> 8,&coeffs[20 * 16..], &mut self.yuv_b[V_OFF..]);
+
+        // stash away top samples for next block
+        if mb_y < self.mb_h - 1 {
+            top_yuv[0].y.copy_from_slice(&self.yuv_b[Y_OFF + 15 * UBPS..][..16]);
+            top_yuv[0].u.copy_from_slice(&self.yuv_b[U_OFF + 7 * UBPS..][..8]);
+            top_yuv[0].v.copy_from_slice(&self.yuv_b[V_OFF + 7 * UBPS..][..8]);
+        }
+        // Transfer reconstructed samples from yuv_b_ cache to final destination.
+        let y_out = &mut self.cache_y[mb_x * 16..];
+        let u_out = &mut self.cache_u[mb_x * 8..];
+        let v_out = &mut self.cache_v[mb_x * 8..];
+        for j in 0..16 {
+            y_out[j * self.cache_y_stride..][..16].copy_from_slice(&self.yuv_b[Y_OFF + j * UBPS..][..16]);
+        }
+        for j in 0..8 {
+            u_out[j * self.cache_uv_stride..][..8].copy_from_slice(&self.yuv_b[U_OFF + j * UBPS..][..8]);
+            v_out[j * self.cache_uv_stride..][..8].copy_from_slice(&self.yuv_b[V_OFF + j * UBPS..][..8]);
         }
     }
 
@@ -415,90 +509,7 @@ impl VP8Decoder<'_> {
 
         // Reconstruct one row.
         for mb_x in 0..self.mb_w {
-            let block = &self.mb_data[mb_x];
-
-            // Rotate in the left samples from previously decoded block. We move four
-            // pixels at a time for alignment reason, and because of in-loop filter.
-            if mb_x > 0 {
-                for j in 0..17 {
-                    copy_32b_left(self.yuv_b, Y_OFF-UBPS + j * UBPS - 4, Y_OFF-UBPS + j * UBPS + 12);
-                }
-                for j in 0..9 {
-                    copy_32b_left(self.yuv_b, U_OFF-UBPS + j * UBPS - 4, U_OFF-UBPS + j * UBPS + 4);
-                    copy_32b_left(self.yuv_b, V_OFF-UBPS + j * UBPS - 4, V_OFF-UBPS + j * UBPS + 4);
-                }
-            }
-            // bring top samples into the cache
-            let top_yuv = &mut self.yuv_t[self.mb_x..];
-            let coeffs = &block.coeffs;
-            let mut bits = block.non_zero_y;
-
-            if mb_y > 0 {
-                self.yuv_b[Y_OFF - UBPS..][..16].copy_from_slice(&top_yuv[0].y);
-                self.yuv_b[U_OFF - UBPS..][..8].copy_from_slice(&top_yuv[0].u);
-                self.yuv_b[V_OFF - UBPS..][..8].copy_from_slice(&top_yuv[0].v);
-            }
-            // predict and add residuals
-            if block.is_i4x4 != 0 {    // 4x4
-                // In the C they cast it to an uint32 pointer to let them deal with it 4 bytes at a time
-                // we'll skip that and assume the optimizer will essentially do the same thing.
-                let top_right = &mut self.yuv_b[Y_OFF - UBPS + 16..];
-                if mb_y > 0 {
-                    if mb_x >= self.mb_w - 1 { // on rightmost border
-                        top_right[..4].fill(top_yuv[0].y[15]);
-                    } else {
-                        top_right[..4].copy_from_slice(&top_yuv[1].y[..4]);
-                    }
-                }
-                // replicate the top-right pixels below
-                let to_replicate: [u8; 4] = top_right[0..4].try_into().unwrap();
-                top_right[3*4 * UBPS..][..4].copy_from_slice(&to_replicate);
-                top_right[2*4 * UBPS..][..4].copy_from_slice(&to_replicate);
-                top_right[1*4 * UBPS..][..4].copy_from_slice(&to_replicate);
-
-                // predict and add residuals for all 4x4 blocks in turn.
-                for n in 0..16 {
-                    let dst_offset = Y_OFF + K_SCAN[n];
-                    Self::vp8_pred_luma4(self.yuv_b, dst_offset, block.imodes[n]);
-                    do_transform(bits, &coeffs[n * 16..], &mut self.yuv_b[dst_offset..]);
-                    bits <<= 2;
-                }
-            } else {    // 16x16
-                let mode = Self::GetMode(mb_x, mb_y, block.imodes[0]);
-                Self::vp8_pred_luma16(self.yuv_b, Y_OFF, mode);
-                if bits != 0 {
-                    for n in 0..16 {
-                        do_transform(bits, &coeffs[n * 16..], &mut self.yuv_b[Y_OFF + K_SCAN[n]..]);
-                        bits <<= 2;
-                    }
-                }
-            }
-
-            // Chroma
-            let bits_uv = block.non_zero_uv;
-            let mode = Self::GetMode(mb_x, mb_y, block.uvmode);
-            Self::vp8_pred_chroma8(self.yuv_b, U_OFF, mode);
-            Self::vp8_pred_chroma8(self.yuv_b, V_OFF, mode);
-            do_uv_transform(bits_uv, to_array_ref(&coeffs[16 * 16..]), to_array_ref_mut(&mut self.yuv_b[U_OFF..]));
-            do_uv_transform(bits_uv >> 8, to_array_ref(&coeffs[20 * 16..]), to_array_ref_mut(&mut self.yuv_b[V_OFF..]));
-
-            // stash away top samples for next block
-            if mb_y < self.mb_h - 1 {
-                top_yuv[0].y.copy_from_slice(&self.yuv_b[Y_OFF + 15 * UBPS..][..16]);
-                top_yuv[0].u.copy_from_slice(&self.yuv_b[U_OFF + 7 * UBPS..][..8]);
-                top_yuv[0].v.copy_from_slice(&self.yuv_b[V_OFF + 7 * UBPS..][..8]);
-            }
-            // Transfer reconstructed samples from yuv_b_ cache to final destination.
-            let y_out = &mut self.cache_y[mb_x * 16..];
-            let u_out = &mut self.cache_u[mb_x * 8..];
-            let v_out = &mut self.cache_v[mb_x * 8..];
-            for j in 0..16 {
-                y_out[j * self.cache_y_stride..][..16].copy_from_slice(&self.yuv_b[Y_OFF + j * UBPS..][..16]);
-            }
-            for j in 0..8 {
-                u_out[j * self.cache_uv_stride..][..8].copy_from_slice(&self.yuv_b[U_OFF + j * UBPS..][..8]);
-                v_out[j * self.cache_uv_stride..][..8].copy_from_slice(&self.yuv_b[V_OFF + j * UBPS..][..8]);
-            }
+            self.reconstruct_macroblock(mb_x, mb_y)
         }
 
     }
@@ -547,7 +558,7 @@ impl VP8Decoder<'_> {
     // The C uses the numerical values directly (as index into function pointer array)
     // with some special casing.  We assume that the optimizer will turn this plus the
     // switch on enum above into a switch on numerical values.
-    fn GetMode(mb_x: usize, mb_y: usize, mode: u8) -> PredMode {
+    fn get_mode(mb_x: usize, mb_y: usize, mode: u8) -> PredMode {
         match(mode, mb_x, mb_y) {
             (0, 0, 0) => PredMode::DcNoTopLeft,
             (0, 0, _) => PredMode::DcNoLeft,
@@ -579,7 +590,7 @@ enum PredMode {
 // Temporary extern wrappers
 
 #[no_mangle]
-unsafe extern "C" fn ReconstructRow_RS(dec: *mut VP8Decoder_FFI, ctx: *mut VP8ThreadContext) {
-    let mut dec = VP8Decoder::from_ffi(dec);
+unsafe extern "C" fn ReconstructRow(ffi: *mut VP8Decoder_FFI, ctx: *mut VP8ThreadContext) {
+    let mut dec = VP8Decoder::from_ffi(ffi);
     dec.reconstruct_row((*ctx).mb_y as usize);
 }

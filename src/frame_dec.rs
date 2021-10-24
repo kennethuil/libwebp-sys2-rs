@@ -1,5 +1,5 @@
 use core::slice;
-use crate::{array::{to_array_ref, to_array_ref_mut}, dec::{transform_ac3, transform_dc, transform_dc_uv, transform_two, transform_uv}};
+use crate::{array::{to_array_ref, to_array_ref_mut}, dec::{transform_ac3, transform_dc, transform_dc_uv, transform_one, transform_uv}};
 use crate::dsp::{UBPS};
 
 //------------------------------------------------------------------------------
@@ -13,19 +13,19 @@ pub(crate) static K_SCAN: [usize; 16] = [
 
 pub(crate) fn do_transform(bits: u32, src: &[i16], dst: &mut[u8]) {
     match bits >> 30 {
-        3 => transform_two(to_array_ref(src), to_array_ref_mut(dst), false),
+        3 => transform_one(to_array_ref(src), to_array_ref_mut(dst)),
         2 => transform_ac3(to_array_ref(src), to_array_ref_mut(dst)),
         1 => transform_dc(src[0], to_array_ref_mut(dst)),
         _ => {}
     }
 }
 
-pub(crate) fn do_uv_transform(bits: u32, src: &[i16; 64], dst: &mut [u8; 132 + 4 * UBPS]) {
+pub(crate) fn do_uv_transform(bits: u32, src: &[i16], dst: &mut [u8]) {
     if bits & 0xff != 0 {       // any non-zero coeff at all?
         if bits & 0xaa != 0 {   // any non-zero AC coefficient?
-            transform_uv(src, dst); // note we don't use the AC3 variant for U/V
+            transform_uv(to_array_ref(src), to_array_ref_mut(dst)); // note we don't use the AC3 variant for U/V
         } else {
-            transform_dc_uv(src, dst);
+            transform_dc_uv(to_array_ref(src), dst);
         }
     }
 }

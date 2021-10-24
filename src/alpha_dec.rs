@@ -1,10 +1,11 @@
 use libc::c_int;
 
-use crate::{dsp::WEBP_FILTER_TYPE, vp8_dec::VP8Io};
+use crate::{VP8StatusCode, dsp::WEBP_FILTER_TYPE, vp8_dec::VP8Io};
 
 #[repr(C)]
 pub(crate) struct VP8LDecoder {
-
+    status: VP8StatusCode
+    // ...
 }
 #[repr(C)]
 pub(crate) struct ALPHDecoder {
