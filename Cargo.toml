@@ -29,6 +29,7 @@ libc = "0.2.43"
 bytemuck = { version = "1.7", features = ["derive"] }
 byteorder = "1"
 no-panic = "0.1"
+backtrace = "0.3"
 
 [dev-dependencies]
 siphasher = "0.3"

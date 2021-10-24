@@ -169,22 +169,22 @@ fn true_motion<const DST_SIZE: usize, const SIZE_PARAM: isize>(dst: &mut OffsetA
     }
 }
 
-fn tm4(dst: &mut OffsetArray<u8, {((BPS+1)*4+1) as usize}, {BPS+1}>) {
+pub(crate) fn tm4(dst: &mut OffsetArray<u8, {((BPS+1)*4+1) as usize}, {BPS+1}>) {
     true_motion::<{((BPS+1)*4+1) as usize}, 4>(dst);
 }
 
-fn tm8uv(dst: &mut OffsetArray<u8, {((BPS+1)*8+1) as usize}, {BPS+1}>) {
+pub(crate) fn tm8uv(dst: &mut OffsetArray<u8, {((BPS+1)*8+1) as usize}, {BPS+1}>) {
     true_motion::<{((BPS+1)*8+1) as usize}, 8>(dst);
 }
 
-fn tm16(dst: &mut OffsetArray<u8, {((BPS+1)*16+1) as usize}, {BPS+1}>) {
+pub(crate) fn tm16(dst: &mut OffsetArray<u8, {((BPS+1)*16+1) as usize}, {BPS+1}>) {
     true_motion::<{((BPS+1)*16+1) as usize}, 16>(dst);
 }
 
 //------------------------------------------------------------------------------
 // 16x16
 
-fn ve16(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) { // vertical
+pub(crate) fn ve16(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) { // vertical
     let (src, dst) = dst.split_at_mut(0);
     let src = &src[0..16];
     for dst_line in dst.chunks_exact_mut(UBPS/2).step_by(2) {
@@ -192,7 +192,7 @@ fn ve16(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) { // vertical
     }
 }
 
-fn he16(dst: &mut OffsetArray<u8, {(BPS*15+17) as usize}, 1>) { // horizontal
+pub(crate) fn he16(dst: &mut OffsetArray<u8, {(BPS*15+17) as usize}, 1>) { // horizontal
     // TODO: Do we really get full BPS-sized chunks or not?
     for chunk in dst.chunks_mut(BPS as usize) {
         let v = chunk[0];
@@ -200,13 +200,13 @@ fn he16(dst: &mut OffsetArray<u8, {(BPS*15+17) as usize}, 1>) { // horizontal
     }
 }
 
-fn put16(v: u8, dst: &mut [u8; 15*UBPS+16]) {
+pub(crate) fn put16(v: u8, dst: &mut [u8; 15*UBPS+16]) {
     for chunk in dst.chunks_exact_mut(UBPS/2).step_by(2) {
         chunk.fill(v);
     }
 }
 
-fn dc16(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC
+pub(crate) fn dc16(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC
     let mut dc:u32 = 16;
     for j in 0..16 {
         let first = dst[-1 + j * BPS] as u32;
@@ -218,7 +218,7 @@ fn dc16(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC
     put16(((dc >> 5) & 0xff) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
-fn dc16_no_top(dst: &mut OffsetArray<u8, {UBPS*15+17}, 1>) {  // DC with top samples not available
+pub(crate) fn dc16_no_top(dst: &mut OffsetArray<u8, {UBPS*15+17}, 1>) {  // DC with top samples not available
     let mut dc:u32 = 8;
     for j in 0..16 {
         dc = dc.wrapping_add(dst[-1 + j * BPS] as u32);
@@ -226,7 +226,7 @@ fn dc16_no_top(dst: &mut OffsetArray<u8, {UBPS*15+17}, 1>) {  // DC with top sam
     put16(((dc >> 4) & 0xff) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
-fn dc16_no_left(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC with left samples not available
+pub(crate) fn dc16_no_left(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC with left samples not available
     let mut dc:u32 = 8;
     for i in 0..16 {
         dc = dc.wrapping_add(dst[i - BPS] as u32);
@@ -234,7 +234,7 @@ fn dc16_no_left(dst: &mut OffsetArray<u8, {UBPS*16+16}, {BPS}>) {  // DC with le
     put16(((dc >> 4) & 0xff) as u8, to_array_ref_mut(&mut dst[0..]));
 }
 
-fn dc16_no_top_left(dst: &mut [u8; UBPS*15+16]) {  // DC with no top and left samples
+pub(crate) fn dc16_no_top_left(dst: &mut [u8; UBPS*15+16]) {  // DC with no top and left samples
     put16(0x80, dst);
 }
 

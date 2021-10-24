@@ -46,12 +46,12 @@ WEBP_INLINE void DoTransform(uint32_t bits, const int16_t* const src,
 void DoUVTransform(uint32_t bits, const int16_t* const src,
                           uint8_t* const dst);
 
-static void ReconstructRow(const VP8Decoder* const dec,
+void ReconstructRow(const VP8Decoder* const dec,
                            const VP8ThreadContext* ctx) {
   int j;
   int mb_x;
   const int mb_y = ctx->mb_y_;
-  const int cache_id = ctx->id_;
+  const int cache_id = 0;
   uint8_t* const y_dst = dec->yuv_b_ + Y_OFF;
   uint8_t* const u_dst = dec->yuv_b_ + U_OFF;
   uint8_t* const v_dst = dec->yuv_b_ + V_OFF;
@@ -152,11 +152,9 @@ static void ReconstructRow(const VP8Decoder* const dec,
     }
     // Transfer reconstructed samples from yuv_b_ cache to final destination.
     {
-      const int y_offset = cache_id * 16 * dec->cache_y_stride_;
-      const int uv_offset = cache_id * 8 * dec->cache_uv_stride_;
-      uint8_t* const y_out = dec->cache_y_ + mb_x * 16 + y_offset;
-      uint8_t* const u_out = dec->cache_u_ + mb_x * 8 + uv_offset;
-      uint8_t* const v_out = dec->cache_v_ + mb_x * 8 + uv_offset;
+      uint8_t* const y_out = dec->cache_y_ + mb_x * 16;
+      uint8_t* const u_out = dec->cache_u_ + mb_x * 8;
+      uint8_t* const v_out = dec->cache_v_ + mb_x * 8;
       for (j = 0; j < 16; ++j) {
         memcpy(y_out + j * dec->cache_y_stride_, y_dst + j * BPS, 16);
       }
@@ -226,6 +224,7 @@ static void DoFilter(const VP8Decoder* const dec, int mb_x, int mb_y) {
     }
   }
 }
+
 
 // Filter the decoded macroblock row (if needed)
 static void FilterRow(const VP8Decoder* const dec) {
@@ -395,10 +394,6 @@ static int FinishRow(void* arg1, void* arg2) {
   const int is_first_row = (mb_y == 0);
   const int is_last_row = (mb_y >= dec->br_mb_y_ - 1);
 
-  if (dec->mt_method_ == 2) {
-    ReconstructRow(dec, ctx);
-  }
-
   if (ctx->filter_row_) {
     FilterRow(dec);
   }
@@ -490,36 +485,7 @@ int VP8ProcessRow(VP8Decoder* const dec, VP8Io* const io) {
     ok = FinishRow(dec, io);
   } else {
     // multithreading nonsense
-    /*
-    WebPWorker* const worker = &dec->worker_;
-    // Finish previous job *before* updating context
-    ok &= WebPGetWorkerInterface()->Sync(worker);
-    assert(worker->status_ == OK);
-    if (ok) {   // spawn a new deblocking/output job
-      ctx->io_ = *io;
-      ctx->id_ = dec->cache_id_;
-      ctx->mb_y_ = dec->mb_y_;
-      ctx->filter_row_ = filter_row;
-      if (dec->mt_method_ == 2) {  // swap macroblock data
-        VP8MBData* const tmp = ctx->mb_data_;
-        ctx->mb_data_ = dec->mb_data_;
-        dec->mb_data_ = tmp;
-      } else {
-        // perform reconstruction directly in main thread
-        ReconstructRow(dec, ctx);
-      }
-      if (filter_row) {            // swap filter info
-        VP8FInfo* const tmp = ctx->f_info_;
-        ctx->f_info_ = dec->f_info_;
-        dec->f_info_ = tmp;
-      }
-      // (reconstruct)+filter in parallel
-      WebPGetWorkerInterface()->Launch(worker);
-      if (++dec->cache_id_ == dec->num_caches_) {
-        dec->cache_id_ = 0;
-      }
-    }
-    */
+    // ... snip
   }
   return ok;
 }

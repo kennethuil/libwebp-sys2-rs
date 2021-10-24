@@ -29,3 +29,8 @@ mod dec_clip_tables;
 mod frame_dec;
 mod array;
 mod dsp;
+mod vp8_dec;
+mod bit_reader_utils;
+mod common_dec;
+mod random_utils;
+mod alpha_dec;

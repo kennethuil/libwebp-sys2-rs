@@ -1,3 +1,7 @@
+use std::sync::atomic::AtomicU32;
+
+use backtrace::Backtrace;
+
 use crate::offsetref::OffsetSliceRef;
 
 #[allow(overflowing_literals)]
@@ -316,3 +320,12 @@ pub static VP8_KSCLIP1: OffsetSliceRef<i8> = OffsetSliceRef::new(&SCLIP1, 1020);
 pub static VP8_KSCLIP2: OffsetSliceRef<i8> = OffsetSliceRef::new(&SCLIP2, 112);
 pub static VP8_KCLIP1: OffsetSliceRef<u8> = OffsetSliceRef::new(&CLIP1, 255);
 pub static VP8_KABS0: OffsetSliceRef<u8> = OffsetSliceRef::new(&ABS0, 255);
+
+static HIT_COUNT: AtomicU32 = AtomicU32::new(0);
+
+#[no_mangle]
+extern "C" fn print_stacktrace(hit_count: u32) {
+    if HIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::AcqRel) == hit_count {
+        println!("{:?}", Backtrace::new());
+    }
+}

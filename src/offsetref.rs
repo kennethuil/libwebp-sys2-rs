@@ -1,4 +1,4 @@
-use std::{ops::{Index, IndexMut, Range, RangeFrom}, slice::{self, ChunksExactMut, ChunksMut}};
+use std::{convert::TryInto, ops::{Index, IndexMut, Range, RangeFrom}, slice::{self, ChunksExactMut, ChunksMut}};
 
 use bytemuck::TransparentWrapper;
 
@@ -109,6 +109,12 @@ impl<T, const SIZE: usize, const ZERO: isize> OffsetArray<T, SIZE, ZERO> {
     pub unsafe fn from_zero_mut_ptr<'a>(ptr: *mut T) -> &'a mut OffsetArray<T, SIZE, ZERO> {
         let begin = ptr.offset(-ZERO);
         let arr = &mut *(begin as *mut[T; SIZE]);
+        OffsetArray::<T, SIZE, ZERO>::wrap_mut(arr)
+    }
+
+    pub fn from_zero_offset_slice_mut<'b, 'c>(slice: &'c mut [T], offset: usize) -> &'b mut Self where 'c: 'b {
+        let begin = ((offset as isize) - ZERO) as usize;
+        let arr = (&mut slice[begin..][..SIZE]).try_into().unwrap();
         OffsetArray::<T, SIZE, ZERO>::wrap_mut(arr)
     }
 
