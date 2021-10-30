@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include "src/dec/vp8i_dec.h"
 #include "src/utils/utils.h"
+#include <stdio.h>
 
 //------------------------------------------------------------------------------
 // Main reconstruction function.
@@ -59,55 +60,9 @@ void ReconstructRow(const VP8Decoder* const dec,
 //                 U/V, so it's 8 samples total (because of the 2x upsampling).
 static const uint8_t kFilterExtraRows[3] = { 0, 2, 8 };
 
-static void DoFilter(const VP8Decoder* const dec, int mb_x, int mb_y) {
-  const VP8ThreadContext* const ctx = &dec->thread_ctx_;
-  const int cache_id = ctx->id_;
-  const int y_bps = dec->cache_y_stride_;
-  const VP8FInfo* const f_info = ctx->f_info_ + mb_x;
-  uint8_t* const y_dst = dec->cache_y_ + cache_id * 16 * y_bps + mb_x * 16;
-  const int ilevel = f_info->f_ilevel_;
-  const int limit = f_info->f_limit_;
-  if (limit == 0) {
-    return;
-  }
-  assert(limit >= 3);
-  if (dec->filter_type_ == 1) {   // simple
-    if (mb_x > 0) {
-      VP8SimpleHFilter16(y_dst, y_bps, limit + 4);
-    }
-    if (f_info->f_inner_) {
-      VP8SimpleHFilter16i(y_dst, y_bps, limit);
-    }
-    if (mb_y > 0) {
-      VP8SimpleVFilter16(y_dst, y_bps, limit + 4);
-    }
-    if (f_info->f_inner_) {
-      VP8SimpleVFilter16i(y_dst, y_bps, limit);
-    }
-  } else {    // complex
-    const int uv_bps = dec->cache_uv_stride_;
-    uint8_t* const u_dst = dec->cache_u_ + cache_id * 8 * uv_bps + mb_x * 8;
-    uint8_t* const v_dst = dec->cache_v_ + cache_id * 8 * uv_bps + mb_x * 8;
-    const int hev_thresh = f_info->hev_thresh_;
-    if (mb_x > 0) {
-      VP8HFilter16(y_dst, y_bps, limit + 4, ilevel, hev_thresh);
-      VP8HFilter8(u_dst, v_dst, uv_bps, limit + 4, ilevel, hev_thresh);
-    }
-    if (f_info->f_inner_) {
-      VP8HFilter16i(y_dst, y_bps, limit, ilevel, hev_thresh);
-      VP8HFilter8i(u_dst, v_dst, uv_bps, limit, ilevel, hev_thresh);
-    }
-    if (mb_y > 0) {
-      VP8VFilter16(y_dst, y_bps, limit + 4, ilevel, hev_thresh);
-      VP8VFilter8(u_dst, v_dst, uv_bps, limit + 4, ilevel, hev_thresh);
-    }
-    if (f_info->f_inner_) {
-      VP8VFilter16i(y_dst, y_bps, limit, ilevel, hev_thresh);
-      VP8VFilter8i(u_dst, v_dst, uv_bps, limit, ilevel, hev_thresh);
-    }
-  }
-}
+void DoFilter(const VP8Decoder* const dec, int mb_x, int mb_y);
 
+void ShowParams(uint8_t* const y_dst, size_t stride, uint32_t thresh, uint32_t ilevel);
 
 // Filter the decoded macroblock row (if needed)
 static void FilterRow(const VP8Decoder* const dec) {

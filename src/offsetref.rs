@@ -1,5 +1,5 @@
 use std::{convert::TryInto, ops::{Index, IndexMut, Range, RangeFrom}, slice::{self, ChunksExactMut, ChunksMut}};
-
+use std::fmt::Debug;
 use bytemuck::TransparentWrapper;
 
 pub struct OffsetSliceRef<'a, T> {
@@ -34,6 +34,14 @@ pub struct OffsetSliceRefMut<'a, T> {
     zero: isize
 }
 
+impl<T> Debug for OffsetSliceRefMut<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //f.debug_struct("OffsetSliceRefMut")
+        //    .field("zero", &self.slice[self.zero] as *mut T).field("zero", &self.zero).finish()
+        write!(f, "zero: {:?}", &self.slice[self.zero as usize] as *const T)
+    }
+}
+
 impl<T> OffsetSliceRefMut<'_, T> {
     #[allow(dead_code)]
     pub fn new(slice: &mut [T], zero: isize) -> OffsetSliceRefMut<T> {
@@ -42,6 +50,11 @@ impl<T> OffsetSliceRefMut<'_, T> {
             zero
         }
     }
+
+    pub fn from_zero_offset_slice_mut<'b, 'c>(slice: &'c mut [T], offset: usize) -> OffsetSliceRefMut<'b, T> where 'c: 'b {
+        OffsetSliceRefMut { slice, zero: offset as isize }
+    }
+
 
     #[allow(dead_code)]
     pub fn with_offset<'b, 'c>(&'c mut self, offset: isize) -> OffsetSliceRefMut<'b, T> where 'c: 'b {
@@ -87,10 +100,43 @@ impl<T> Index<isize> for OffsetSliceRefMut<'_, T> {
         &self.slice[inner_idx as usize]
     }
 }
+
+impl<T> Index<Range<isize>> for OffsetSliceRefMut<'_, T> {
+    type Output = [T];
+
+    fn index(&self, r: Range<isize>) -> &Self::Output {        
+        let inner_range = ((r.start + self.zero) as usize)..((r.end + self.zero) as usize);
+        &self.slice[inner_range]
+    }
+}
+
+impl<T> Index<RangeFrom<isize>> for OffsetSliceRefMut<'_, T> {
+    type Output = [T];
+
+    fn index(&self, r: RangeFrom<isize>) -> &Self::Output {
+        let inner_range = ((r.start + self.zero) as usize)..;
+        &self.slice[inner_range]        
+    }
+}
+
 impl<T> IndexMut<isize> for OffsetSliceRefMut<'_, T> {
     fn index_mut(&mut self, idx: isize) -> &mut Self::Output {
         let inner_idx = idx + self.zero;
         &mut self.slice[inner_idx as usize]       
+    }
+}
+
+impl<T> IndexMut<Range<isize>> for OffsetSliceRefMut<'_, T> {
+    fn index_mut(&mut self, r: Range<isize>) -> &mut Self::Output {
+        let inner_range = ((r.start + self.zero) as usize)..((r.end + self.zero) as usize);
+        &mut self.slice[inner_range]
+    }
+}
+
+impl<T> IndexMut<RangeFrom<isize>> for OffsetSliceRefMut<'_, T> {
+    fn index_mut(&mut self, r: RangeFrom<isize>) -> &mut Self::Output {
+        let inner_range = ((r.start + self.zero) as usize)..;
+        &mut self.slice[inner_range]
     }
 }
 

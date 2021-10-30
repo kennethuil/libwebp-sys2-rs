@@ -612,6 +612,8 @@ pub(crate) fn simple_h_filter_16i(p: &mut OffsetSliceRefMut<u8>, stride: isize, 
 fn filter_loop_26(p: &mut OffsetSliceRefMut<u8>,
                 hstride: isize, vstride: isize, size: u32,
                 thresh: u32, ithresh: u8, hev_thresh:u8) {
+    let mut p = p.with_offset(0);
+    let p = &mut p;
     let thresh2 = 2 * thresh + 1;
     for _ in 0..size {
         // p: (-4*step)..(3*step+1)
@@ -633,6 +635,8 @@ fn filter_loop_26(p: &mut OffsetSliceRefMut<u8>,
 fn filter_loop_24(p: &mut OffsetSliceRefMut<u8>,
                 hstride: isize, vstride: isize, size: u32,
                 thresh: u32, ithresh: u8, hev_thresh:u8) {
+    let mut p = p.with_offset(0);
+    let p = &mut p;
     let thresh2 = 2 * thresh + 1;
     for _ in 0..size {
         // p: (-4*step)..(3*step+1)

@@ -1,16 +1,14 @@
 use core::slice;
 use std::convert::TryInto;
-use std::mem::size_of;
-
 use libc::{c_int, c_void};
 use crate::alpha_dec::ALPHDecoder;
 use crate::bit_reader_utils::VP8BitReader;
 use crate::VP8StatusCode;
 use crate::common_dec::{MAX_NUM_PARTITIONS, MB_FEATURE_TREE_PROBS, NUM_BANDS, NUM_CTX, NUM_MB_SEGMENTS, NUM_MODE_LF_DELTAS, NUM_PROBAS, NUM_REF_LF_DELTAS, NUM_TYPES};
-use crate::dec::{dc16, dc16_no_left, dc16_no_top, dc16_no_top_left, dc4, dc8_uv, dc8_uv_no_left, dc8_uv_no_top, dc8_uv_no_top_left, hd4, he16, he4, he8_uv, hu4, ld4, rd4, tm16, tm4, tm8uv, ve16, ve4, ve8_uv, vl4, vr4};
+use crate::dec::{dc16, dc16_no_left, dc16_no_top, dc16_no_top_left, dc4, dc8_uv, dc8_uv_no_left, dc8_uv_no_top, dc8_uv_no_top_left, h_filter_16, h_filter_16i, h_filter_8, h_filter_8i, hd4, he16, he4, he8_uv, hu4, ld4, rd4, simple_h_filter_16, simple_h_filter_16i, simple_v_filter_16, simple_v_filter_16i, tm16, tm4, tm8uv, v_filter_16, v_filter_16i, v_filter_8, v_filter_8i, ve16, ve4, ve8_uv, vl4, vr4};
 use crate::dsp::UBPS;
 use crate::frame_dec::{K_SCAN, do_transform, do_uv_transform};
-use crate::offsetref::OffsetArray;
+use crate::offsetref::{OffsetArray, OffsetSliceRefMut};
 use crate::random_utils::VP8Random;
 //use bytemuck::{Pod, Zeroable};
 
@@ -330,20 +328,27 @@ const YUV_SIZE: usize = UBPS * 17 + UBPS * 9;
 const Y_OFF: usize = UBPS * 1 + 8;
 const U_OFF: usize = Y_OFF + UBPS * 16 + UBPS;
 const V_OFF: usize = U_OFF + 16;
+
+// K_FILTER_EXTRA_ROWS[] = How many extra lines are needed on the MB boundary
+// for caching, given a filtering level.
+// Simple filter:  up to 2 luma samples are read and 1 is written.
+// Complex filter: up to 4 luma samples are read and 3 are written. Same for
+//                 U/V, so it's 8 samples total (because of the 2x upsampling).
 static K_FILTER_EXTRA_ROWS: [usize; 3] = [0, 2, 8];
 
-#[derive(Debug)]
+//#[derive(Debug)]
 pub(crate) struct VP8Decoder<'dec> {
     // dimension, in macroblock units.
     mb_w: usize, // int?
     mb_h: usize, // int?
     yuv_t: &'dec mut [VP8TopSamples],  // top y/u/v samples
     // ...
+    f_info: &'dec mut [VP8FInfo],
     yuv_b: &'dec mut [u8; YUV_SIZE], // main block for Y/U/V (size = YUV_SIZE)
 
-    cache_y: &'dec mut [u8], // macroblock row for storing unfiltered samples
-    cache_u: &'dec mut [u8],
-    cache_v: &'dec mut [u8],
+    cache_y: OffsetSliceRefMut<'dec, u8>, // macroblock row for storing unfiltered samples
+    cache_u: OffsetSliceRefMut<'dec, u8>,
+    cache_v: OffsetSliceRefMut<'dec, u8>,
     cache_y_stride: usize, // int?
     cache_uv_stride: usize, // int?
 
@@ -351,6 +356,9 @@ pub(crate) struct VP8Decoder<'dec> {
     mb_x: usize, // int?
     mb_y: usize, // int?
     mb_data: &'dec mut [VP8MBData], // size: mb_w
+
+    // Filtering side-info
+    filter_type: usize,   // 0=off, 1=simple, 2=complex
 }
 
 fn copy_32b_left(arr: &mut [u8], dst_idx: usize, src_idx: usize) {
@@ -363,29 +371,85 @@ fn copy_32b_left(arr: &mut [u8], dst_idx: usize, src_idx: usize) {
 
 impl VP8Decoder<'_> {
     unsafe fn from_ffi(ffi: *mut VP8Decoder_FFI) -> Self {
-        //println!("{:#?}", *ffi);
-        let top_size = size_of::<VP8TopSamples>() * (*ffi).mb_w as usize;
-        let cache_height = 16 + K_FILTER_EXTRA_ROWS[(*ffi).filter_type as usize] * 3 / 2;
-        let cache_size = top_size * cache_height;
         let extra_rows = K_FILTER_EXTRA_ROWS[(*ffi).filter_type as usize];
+        let extra_y = extra_rows * (*ffi).cache_y_stride as usize;
         let extra_uv = (extra_rows / 2) * (*ffi).cache_uv_stride as usize;
-        let cache_y_size = 16 * (*ffi).cache_y_stride as usize + extra_uv;
-        let cache_u_size = 8 * (*ffi).cache_uv_stride as usize + extra_uv;
-        let cache_v_size = cache_size - (cache_y_size + cache_u_size);
+        let f_info_size = if (*ffi).filter_type > 0 {
+            (*ffi).mb_w as usize
+        } else {
+            0
+        };
 
         VP8Decoder { 
             mb_w: (*ffi).mb_w as usize,
             mb_h: (*ffi).mb_h as usize, 
             yuv_t: slice::from_raw_parts_mut((*ffi).yuv_t, (*ffi).mb_w as usize), 
+            f_info: slice::from_raw_parts_mut((*ffi).f_info, f_info_size),
             yuv_b: &mut *((*ffi).yuv_b as *mut [u8; YUV_SIZE]),
-            cache_y: slice::from_raw_parts_mut((*ffi).cache_y, cache_y_size), 
-            cache_u: slice::from_raw_parts_mut((*ffi).cache_u, cache_u_size), 
-            cache_v: slice::from_raw_parts_mut((*ffi).cache_v, cache_v_size), 
+            cache_y: OffsetSliceRefMut::from_zero_mut_ptr((*ffi).cache_y, -(extra_y as isize),16 * (*ffi).cache_y_stride as isize),
+            cache_u: OffsetSliceRefMut::from_zero_mut_ptr((*ffi).cache_u, -(extra_uv as isize), 8 * (*ffi).cache_uv_stride as isize),
+            cache_v: OffsetSliceRefMut::from_zero_mut_ptr((*ffi).cache_v, -(extra_uv as isize), 8 * (*ffi).cache_uv_stride as isize),
             cache_y_stride: (*ffi).cache_y_stride as usize, 
             cache_uv_stride: (*ffi).cache_uv_stride as usize, 
             mb_x: (*ffi).mb_x as usize, 
             mb_y: (*ffi).mb_y as usize, 
-            mb_data: slice::from_raw_parts_mut((*ffi).mb_data, (*ffi).mb_w as usize) 
+            mb_data: slice::from_raw_parts_mut((*ffi).mb_data, (*ffi).mb_w as usize),
+            filter_type: (*ffi).filter_type as usize,
+        }
+    }
+
+    pub(crate) fn do_filter(&mut self, mb_x: usize, mb_y: usize) {
+        let y_bps = self.cache_y_stride as isize;
+        let mut y_dst = self.cache_y.with_offset(mb_x as isize * 16);
+        let f_info = &self.f_info[mb_x];
+        let ilevel = f_info.f_ilevel;
+        let limit = f_info.f_limit as u32;
+        if limit == 0 {
+            return;
+        }
+        assert!(limit >= 3);
+        if self.filter_type == 1 { // simple
+            
+            if mb_x > 0 {
+                simple_h_filter_16(&mut y_dst, y_bps, limit + 4);
+            }
+            
+            if f_info.f_inner != 0 {
+                simple_h_filter_16i(&mut y_dst, y_bps, limit);
+            }
+            
+            
+            if mb_y > 0 {
+                simple_v_filter_16(&mut y_dst, y_bps, limit + 4);
+            }
+            
+            if f_info.f_inner != 0 {
+                simple_v_filter_16i(&mut y_dst, y_bps, limit);
+            }
+            
+        } else {  // complex 
+            
+            let uv_bps = self.cache_uv_stride as isize;
+            let mut u_dst = self.cache_u.with_offset(mb_x as isize * 8);
+            let mut v_dst = self.cache_v.with_offset(mb_x as isize * 8);
+            let hev_thresh = f_info.hev_thresh;
+
+            if mb_x > 0 {
+                h_filter_16(&mut y_dst, y_bps, limit + 4, ilevel, hev_thresh);
+                h_filter_8(&mut u_dst, &mut v_dst, uv_bps, limit + 4, ilevel, hev_thresh);
+            }
+            if f_info.f_inner != 0 {
+                h_filter_16i(&mut y_dst, y_bps, limit, ilevel, hev_thresh);
+                h_filter_8i(&mut u_dst, &mut v_dst, uv_bps, limit, ilevel, hev_thresh);
+            }
+            if mb_y > 0 {
+                v_filter_16(&mut y_dst, y_bps, limit + 4, ilevel, hev_thresh);
+                v_filter_8(&mut u_dst, &mut v_dst, uv_bps, limit + 4, ilevel, hev_thresh);
+            }
+            if f_info.f_inner != 0 {
+                v_filter_16i(&mut y_dst, y_bps, limit, ilevel, hev_thresh);
+                v_filter_8i(&mut u_dst, &mut v_dst, uv_bps, limit, ilevel, hev_thresh);
+            }
         }
     }
 
@@ -472,9 +536,9 @@ impl VP8Decoder<'_> {
             top_yuv[0].v.copy_from_slice(&self.yuv_b[V_OFF + 7 * UBPS..][..8]);
         }
         // Transfer reconstructed samples from yuv_b_ cache to final destination.
-        let y_out = &mut self.cache_y[mb_x * 16..];
-        let u_out = &mut self.cache_u[mb_x * 8..];
-        let v_out = &mut self.cache_v[mb_x * 8..];
+        let y_out = &mut self.cache_y[mb_x as isize * 16..];
+        let u_out = &mut self.cache_u[mb_x as isize * 8..];
+        let v_out = &mut self.cache_v[mb_x as isize * 8..];
         for j in 0..16 {
             y_out[j * self.cache_y_stride..][..16].copy_from_slice(&self.yuv_b[Y_OFF + j * UBPS..][..16]);
         }
@@ -593,4 +657,15 @@ enum PredMode {
 unsafe extern "C" fn ReconstructRow(ffi: *mut VP8Decoder_FFI, ctx: *mut VP8ThreadContext) {
     let mut dec = VP8Decoder::from_ffi(ffi);
     dec.reconstruct_row((*ctx).mb_y as usize);
+}
+
+#[no_mangle]
+unsafe extern "C" fn DoFilter(ffi: *mut VP8Decoder_FFI, mb_x: c_int, mb_y: c_int) {
+    let mut dec = VP8Decoder::from_ffi(ffi);
+    dec.do_filter(mb_x as usize, mb_y as usize);
+}
+
+#[no_mangle]
+unsafe extern "C" fn ShowParams(y_dst: *mut u8, stride: isize, limit: u32, ilevel: u32) {
+    println!("from C: y_dst = {:?}, stride = {}, limit = {}, ilevel = {}", y_dst, stride, limit, ilevel);
 }
