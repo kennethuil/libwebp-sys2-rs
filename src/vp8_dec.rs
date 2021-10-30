@@ -1,5 +1,6 @@
 use core::slice;
 use std::convert::TryInto;
+use std::ptr::NonNull;
 use libc::{c_int, c_uint, c_void};
 use crate::alpha_dec::ALPHDecoder;
 use crate::bit_reader_utils::VP8BitReader;
@@ -338,6 +339,7 @@ static K_FILTER_EXTRA_ROWS: [usize; 3] = [0, 2, 8];
 
 //#[derive(Debug)]
 pub(crate) struct VP8Decoder<'dec> {
+    ffi: Option<NonNull<VP8Decoder_FFI>>,
     // dimension, in macroblock units.
     mb_w: u32, // int?
     mb_h: u32, // int?
@@ -387,7 +389,8 @@ impl VP8Decoder<'_> {
             0
         };
 
-        VP8Decoder { 
+        VP8Decoder {
+            ffi: NonNull::new(ffi),
             mb_w: (*ffi).mb_w,
             mb_h: (*ffi).mb_h, 
             yuv_t: slice::from_raw_parts_mut((*ffi).yuv_t, (*ffi).mb_w as usize), 
@@ -672,6 +675,7 @@ enum PredMode {
 
 //------------------------------------------------------------------------------------------
 // Temporary extern wrappers
+
 
 #[no_mangle]
 unsafe extern "C" fn ReconstructRow(ffi: *mut VP8Decoder_FFI, ctx: *mut VP8ThreadContext) {

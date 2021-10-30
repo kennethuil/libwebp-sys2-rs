@@ -19,34 +19,6 @@
 //------------------------------------------------------------------------------
 // Main reconstruction function.
 
-static const uint16_t kScan[16] = {
-  0 +  0 * BPS,  4 +  0 * BPS, 8 +  0 * BPS, 12 +  0 * BPS,
-  0 +  4 * BPS,  4 +  4 * BPS, 8 +  4 * BPS, 12 +  4 * BPS,
-  0 +  8 * BPS,  4 +  8 * BPS, 8 +  8 * BPS, 12 +  8 * BPS,
-  0 + 12 * BPS,  4 + 12 * BPS, 8 + 12 * BPS, 12 + 12 * BPS
-};
-
-static int CheckMode(int mb_x, int mb_y, int mode) {
-  if (mode == B_DC_PRED) {
-    if (mb_x == 0) {
-      return (mb_y == 0) ? B_DC_PRED_NOTOPLEFT : B_DC_PRED_NOLEFT;
-    } else {
-      return (mb_y == 0) ? B_DC_PRED_NOTOP : B_DC_PRED;
-    }
-  }
-  return mode;
-}
-
-static void Copy32b(uint8_t* const dst, const uint8_t* const src) {
-  memcpy(dst, src, 4);
-}
-
-WEBP_INLINE void DoTransform(uint32_t bits, const int16_t* const src,
-                                    uint8_t* const dst);
-
-void DoUVTransform(uint32_t bits, const int16_t* const src,
-                          uint8_t* const dst);
-
 void ReconstructRow(const VP8Decoder* const dec,
                            const VP8ThreadContext* ctx);
 
@@ -419,16 +391,7 @@ int VP8ExitCritical(VP8Decoder* const dec, VP8Io* const io) {
 static int InitThreadContext(VP8Decoder* const dec) {
   dec->cache_id_ = 0;
   if (dec->mt_method_ > 0) {
-    WebPWorker* const worker = &dec->worker_;
-    if (!WebPGetWorkerInterface()->Reset(worker)) {
-      return VP8SetError(dec, VP8_STATUS_OUT_OF_MEMORY,
-                         "thread initialization failed.");
-    }
-    worker->data1 = dec;
-    worker->data2 = (void*)&dec->thread_ctx_.io_;
-    worker->hook = FinishRow;
-    dec->num_caches_ =
-      (dec->filter_type_ > 0) ? MT_CACHE_LINES : MT_CACHE_LINES - 1;
+    // snip multi-threading nonsense
   } else {
     dec->num_caches_ = ST_CACHE_LINES;
   }
@@ -438,16 +401,6 @@ static int InitThreadContext(VP8Decoder* const dec) {
 int VP8GetThreadMethod(const WebPDecoderOptions* const options,
                        const WebPHeaderStructure* const headers,
                        int width, int height) {
-  if (options == NULL || options->use_threads == 0) {
-    return 0;
-  }
-  (void)headers;
-  (void)width;
-  (void)height;
-  assert(headers == NULL || !headers->is_lossless);
-#if defined(WEBP_USE_THREAD)
-  if (width >= MIN_WIDTH_FOR_THREADS) return 2;
-#endif
   return 0;
 }
 
