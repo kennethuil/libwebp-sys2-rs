@@ -1,6 +1,6 @@
 use core::slice;
 use std::convert::TryInto;
-use libc::{c_int, c_void};
+use libc::{c_int, c_uint, c_void};
 use crate::alpha_dec::ALPHDecoder;
 use crate::bit_reader_utils::VP8BitReader;
 use crate::VP8StatusCode;
@@ -215,7 +215,7 @@ struct WebPWorker {
 #[derive(Debug)]
 pub(crate) struct VP8ThreadContext {
     id: c_int,                  // cache row to process (in [0..2])
-    mb_y: c_int,                // macroblock position of the row
+    mb_y: c_uint,                // macroblock position of the row
     filter_row: c_int,          // true if row-filtering is needed
     f_info: *mut VP8FInfo,      // filter strengths (swapped with dec->f_info_)
     mb_data: *mut VP8MBData,    // reconstruction data (swapped with dec->mb_data_)
@@ -257,14 +257,14 @@ pub(crate) struct VP8Decoder_FFI {
     thread_ctx: VP8ThreadContext,   // Thread context
 
     // dimension, in macroblock units.
-    pub(crate) mb_w: c_int,
-    pub(crate) mb_h: c_int,
+    pub(crate) mb_w: c_uint,
+    pub(crate) mb_h: c_uint,
 
     // Macroblock to process/filter, depending on cropping and filter_type.
-    tl_mb_x: c_int,     // top-left MB that must be in-loop filtered
-    tl_mb_y: c_int,
-    br_mb_x: c_int,     // last bottom-right MB that must be decoded
-    br_mb_y: c_int,
+    tl_mb_x: c_uint,     // top-left MB that must be in-loop filtered
+    tl_mb_y: c_uint,
+    br_mb_x: c_uint,     // last bottom-right MB that must be decoded
+    br_mb_y: c_uint,
 
     // number of partitions minus one.
     num_parts_minus_one: u32,
@@ -296,16 +296,16 @@ pub(crate) struct VP8Decoder_FFI {
     cache_y: *mut u8,           // macroblock row for storing unfiltered samples
     cache_u: *mut u8,
     cache_v: *mut u8,
-    cache_y_stride: c_int,
-    cache_uv_stride: c_int,
+    cache_y_stride: c_uint,
+    cache_uv_stride: c_uint,
 
     // main memory chunk for the above data. Persistent.
     mem: *mut u8,
     mem_size: usize,
 
     // Per macroblock non-persistent infos.
-    mb_x: c_int,        // current position, in macroblock units
-    mb_y: c_int,
+    mb_x: c_uint,        // current position, in macroblock units
+    mb_y: c_uint,
     mb_data: *mut VP8MBData, // parsed reconstruction data
 
     // Filtering side-info
@@ -339,8 +339,15 @@ static K_FILTER_EXTRA_ROWS: [usize; 3] = [0, 2, 8];
 //#[derive(Debug)]
 pub(crate) struct VP8Decoder<'dec> {
     // dimension, in macroblock units.
-    mb_w: usize, // int?
-    mb_h: usize, // int?
+    mb_w: u32, // int?
+    mb_h: u32, // int?
+
+    // Macroblock to process/filter, depending on cropping and filter_type.
+    tl_mb_x: c_uint,     // top-left MB that must be in-loop filtered
+    tl_mb_y: c_uint,
+    br_mb_x: c_uint,     // last bottom-right MB that must be decoded
+    br_mb_y: c_uint,
+    // ...
     yuv_t: &'dec mut [VP8TopSamples],  // top y/u/v samples
     // ...
     f_info: &'dec mut [VP8FInfo],
@@ -349,16 +356,16 @@ pub(crate) struct VP8Decoder<'dec> {
     cache_y: OffsetSliceRefMut<'dec, u8>, // macroblock row for storing unfiltered samples
     cache_u: OffsetSliceRefMut<'dec, u8>,
     cache_v: OffsetSliceRefMut<'dec, u8>,
-    cache_y_stride: usize, // int?
-    cache_uv_stride: usize, // int?
+    cache_y_stride: u32, // int?
+    cache_uv_stride: u32, // int?
 
     // Per macroblock non-persistent infos.
-    mb_x: usize, // int?
-    mb_y: usize, // int?
+    mb_x: u32, // int?
+    mb_y: u32, // int?
     mb_data: &'dec mut [VP8MBData], // size: mb_w
 
     // Filtering side-info
-    filter_type: usize,   // 0=off, 1=simple, 2=complex
+    filter_type: i32,   // 0=off, 1=simple, 2=complex
 }
 
 fn copy_32b_left(arr: &mut [u8], dst_idx: usize, src_idx: usize) {
@@ -381,27 +388,40 @@ impl VP8Decoder<'_> {
         };
 
         VP8Decoder { 
-            mb_w: (*ffi).mb_w as usize,
-            mb_h: (*ffi).mb_h as usize, 
+            mb_w: (*ffi).mb_w,
+            mb_h: (*ffi).mb_h, 
             yuv_t: slice::from_raw_parts_mut((*ffi).yuv_t, (*ffi).mb_w as usize), 
             f_info: slice::from_raw_parts_mut((*ffi).f_info, f_info_size),
             yuv_b: &mut *((*ffi).yuv_b as *mut [u8; YUV_SIZE]),
             cache_y: OffsetSliceRefMut::from_zero_mut_ptr((*ffi).cache_y, -(extra_y as isize),16 * (*ffi).cache_y_stride as isize),
             cache_u: OffsetSliceRefMut::from_zero_mut_ptr((*ffi).cache_u, -(extra_uv as isize), 8 * (*ffi).cache_uv_stride as isize),
             cache_v: OffsetSliceRefMut::from_zero_mut_ptr((*ffi).cache_v, -(extra_uv as isize), 8 * (*ffi).cache_uv_stride as isize),
-            cache_y_stride: (*ffi).cache_y_stride as usize, 
-            cache_uv_stride: (*ffi).cache_uv_stride as usize, 
-            mb_x: (*ffi).mb_x as usize, 
-            mb_y: (*ffi).mb_y as usize, 
+            cache_y_stride: (*ffi).cache_y_stride, 
+            cache_uv_stride: (*ffi).cache_uv_stride, 
+            mb_x: (*ffi).mb_x, 
+            mb_y: (*ffi).mb_y, 
             mb_data: slice::from_raw_parts_mut((*ffi).mb_data, (*ffi).mb_w as usize),
-            filter_type: (*ffi).filter_type as usize,
+            filter_type: (*ffi).filter_type,
+            tl_mb_x: (*ffi).tl_mb_x,
+            tl_mb_y: (*ffi).tl_mb_y,
+            br_mb_x: (*ffi).br_mb_x,
+            br_mb_y: (*ffi).br_mb_y,
         }
     }
 
-    pub(crate) fn do_filter(&mut self, mb_x: usize, mb_y: usize) {
+    // Filter the decoded macroblock row (if needed)
+    pub(crate) fn filter_row(&mut self) {
+        let mb_y = self.mb_y;
+        // assert(dec->thread_ctx_.filter_row_);
+        for mb_x in self.tl_mb_x..self.br_mb_x {
+            self.do_filter(mb_x, mb_y);
+        }
+    }
+
+    fn do_filter(&mut self, mb_x: u32, mb_y: u32) {
         let y_bps = self.cache_y_stride as isize;
         let mut y_dst = self.cache_y.with_offset(mb_x as isize * 16);
-        let f_info = &self.f_info[mb_x];
+        let f_info = &self.f_info[mb_x as usize];
         let ilevel = f_info.f_ilevel;
         let limit = f_info.f_limit as u32;
         if limit == 0 {
@@ -453,8 +473,8 @@ impl VP8Decoder<'_> {
         }
     }
 
-    fn reconstruct_macroblock(&mut self, mb_x: usize, mb_y: usize) {
-        let block = &self.mb_data[mb_x];
+    fn reconstruct_macroblock(&mut self, mb_x: u32, mb_y: u32) {
+        let block = &self.mb_data[mb_x as usize];
 
         // Rotate in the left samples from previously decoded block. We move four
         // pixels at a time for alignment reason, and because of in-loop filter.
@@ -474,7 +494,7 @@ impl VP8Decoder<'_> {
 
         
         // bring top samples into the cache
-        let top_yuv = &mut self.yuv_t[mb_x..];
+        let top_yuv = &mut self.yuv_t[mb_x as usize..];
         let coeffs = &block.coeffs;
         let mut bits = block.non_zero_y;
 
@@ -540,15 +560,15 @@ impl VP8Decoder<'_> {
         let u_out = &mut self.cache_u[mb_x as isize * 8..];
         let v_out = &mut self.cache_v[mb_x as isize * 8..];
         for j in 0..16 {
-            y_out[j * self.cache_y_stride..][..16].copy_from_slice(&self.yuv_b[Y_OFF + j * UBPS..][..16]);
+            y_out[j * self.cache_y_stride as usize..][..16].copy_from_slice(&self.yuv_b[Y_OFF + j * UBPS..][..16]);
         }
         for j in 0..8 {
-            u_out[j * self.cache_uv_stride..][..8].copy_from_slice(&self.yuv_b[U_OFF + j * UBPS..][..8]);
-            v_out[j * self.cache_uv_stride..][..8].copy_from_slice(&self.yuv_b[V_OFF + j * UBPS..][..8]);
+            u_out[j * self.cache_uv_stride as usize..][..8].copy_from_slice(&self.yuv_b[U_OFF + j * UBPS..][..8]);
+            v_out[j * self.cache_uv_stride as usize..][..8].copy_from_slice(&self.yuv_b[V_OFF + j * UBPS..][..8]);
         }
     }
 
-    pub(crate) fn reconstruct_row(&mut self, mb_y: usize) {
+    pub(crate) fn reconstruct_row(&mut self, mb_y: u32) {
         // Initialize left-most block.
         for j in 0..16 {
             self.yuv_b[Y_OFF + j*UBPS - 1] = 129;
@@ -622,7 +642,7 @@ impl VP8Decoder<'_> {
     // The C uses the numerical values directly (as index into function pointer array)
     // with some special casing.  We assume that the optimizer will turn this plus the
     // switch on enum above into a switch on numerical values.
-    fn get_mode(mb_x: usize, mb_y: usize, mode: u8) -> PredMode {
+    fn get_mode(mb_x: u32, mb_y: u32, mode: u8) -> PredMode {
         match(mode, mb_x, mb_y) {
             (0, 0, 0) => PredMode::DcNoTopLeft,
             (0, 0, _) => PredMode::DcNoLeft,
@@ -656,16 +676,16 @@ enum PredMode {
 #[no_mangle]
 unsafe extern "C" fn ReconstructRow(ffi: *mut VP8Decoder_FFI, ctx: *mut VP8ThreadContext) {
     let mut dec = VP8Decoder::from_ffi(ffi);
-    dec.reconstruct_row((*ctx).mb_y as usize);
-}
-
-#[no_mangle]
-unsafe extern "C" fn DoFilter(ffi: *mut VP8Decoder_FFI, mb_x: c_int, mb_y: c_int) {
-    let mut dec = VP8Decoder::from_ffi(ffi);
-    dec.do_filter(mb_x as usize, mb_y as usize);
+    dec.reconstruct_row((*ctx).mb_y);
 }
 
 #[no_mangle]
 unsafe extern "C" fn ShowParams(y_dst: *mut u8, stride: isize, limit: u32, ilevel: u32) {
     println!("from C: y_dst = {:?}, stride = {}, limit = {}, ilevel = {}", y_dst, stride, limit, ilevel);
+}
+
+#[no_mangle]
+unsafe extern "C" fn FilterRow(ffi: *mut VP8Decoder_FFI) {
+    let mut dec = VP8Decoder::from_ffi(ffi);
+    dec.filter_row();
 }

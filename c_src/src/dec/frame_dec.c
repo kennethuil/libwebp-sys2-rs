@@ -60,19 +60,12 @@ void ReconstructRow(const VP8Decoder* const dec,
 //                 U/V, so it's 8 samples total (because of the 2x upsampling).
 static const uint8_t kFilterExtraRows[3] = { 0, 2, 8 };
 
-void DoFilter(const VP8Decoder* const dec, int mb_x, int mb_y);
-
 void ShowParams(uint8_t* const y_dst, size_t stride, uint32_t thresh, uint32_t ilevel);
 
-// Filter the decoded macroblock row (if needed)
-static void FilterRow(const VP8Decoder* const dec) {
-  int mb_x;
-  const int mb_y = dec->thread_ctx_.mb_y_;
-  assert(dec->thread_ctx_.filter_row_);
-  for (mb_x = dec->tl_mb_x_; mb_x < dec->br_mb_x_; ++mb_x) {
-    DoFilter(dec, mb_x, mb_y);
-  }
-}
+void FilterRow(const VP8Decoder* const dec);
+
+
+
 
 //------------------------------------------------------------------------------
 // Precompute the filtering strength for each segment and each i4x4/i16x16 mode.
