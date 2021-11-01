@@ -359,6 +359,7 @@ mod tests {
                 bytes: buf.as_ptr(),
                 size: buf.len(),
             };
+
             let decoder = WebPAnimDecoderNew(&data, &options);
             assert!(!decoder.is_null());
 

@@ -137,11 +137,8 @@ static WEBP_INLINE void VP8YuvToBgra(uint8_t y, uint8_t u, uint8_t v,
   bgra[3] = 0xff;
 }
 
-static WEBP_INLINE void VP8YuvToRgba(uint8_t y, uint8_t u, uint8_t v,
-                                     uint8_t* const rgba) {
-  VP8YuvToRgb(y, u, v, rgba);
-  rgba[3] = 0xff;
-}
+//void VP8YuvToRgba(uint8_t y, uint8_t u, uint8_t v,
+ //                                    uint8_t* const rgba);
 
 //-----------------------------------------------------------------------------
 // SSE2 extra functions (mostly for upsampling_sse2.c)

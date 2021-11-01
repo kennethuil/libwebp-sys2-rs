@@ -34,3 +34,5 @@ mod bit_reader_utils;
 mod common_dec;
 mod random_utils;
 mod alpha_dec;
+mod upsampling;
+mod yuv;

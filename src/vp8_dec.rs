@@ -693,3 +693,8 @@ unsafe extern "C" fn FilterRow(ffi: *mut VP8Decoder_FFI) {
     let mut dec = VP8Decoder::from_ffi(ffi);
     dec.filter_row();
 }
+
+#[no_mangle]
+unsafe extern "C" fn DoPanic() {
+    panic!("Over here");
+}
