@@ -661,18 +661,197 @@ pub unsafe extern "C" fn WebPInitDecoderConfig(config: *mut WebPDecoderConfig) -
 mod tests {
     use super::*;
 
-    use std::mem;
+    fn hash_image_decode<F>(buf: &[u8], f: &F) -> u64
+        where F: Fn(&mut WebPDecoderConfig) {
+        use siphasher::sip::SipHasher24;
+        use std::hash::{Hasher};
+        use std::mem;
+
+        let mut hasher = SipHasher24::new_with_keys(0xca8e6089151e54eb, 0x58dbee492c222104);
+
+        unsafe {
+            let mut config = mem::zeroed();
+            assert!(WebPInitDecoderConfig(&mut config) != 0);
+
+            f(&mut config);
+            
+            let decode_result = WebPDecode(buf.as_ptr(), buf.len(), &mut config);
+            if decode_result == 4 {
+                return 4;
+            } else {
+                assert_eq!(decode_result, 0);
+            }
+            match config.output.colorspace {
+                MODE_RGBA => {
+                    let output = std::slice::from_raw_parts(config.output.u.RGBA.rgba,
+                        config.output.u.RGBA.size);
+                    hasher.write(output);
+                    hasher.write_i32(config.output.u.RGBA.stride);
+                },
+                _ => unimplemented!()
+            }
+            // TODO: Free
+        }
+        hasher.finish()
+    }
+
+    fn test_image_content<F>(filename: &str, f: &F,
+        expected_hash: u64)
+        where F: Fn(&mut WebPDecoderConfig) {
+        use std::fs::File;
+        use std::io::prelude::*;
+        let mut buf = Vec::new();
+        let len = File::open(filename)
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+        assert!(len > 0);
+        let hash = hash_image_decode(&buf, f);
+        assert_eq!(expected_hash, hash);          
+    }
 
     #[test]
-    fn test_new_and_delete() {
-        unsafe {
-            let mut buf = mem::zeroed();
-            WebPInitDecBuffer(&mut buf);
-            buf.colorspace = MODE_RGB;
-            buf.is_external_memory = 0;
-            let idec = WebPINewDecoder(&mut buf);
-            assert!(!idec.is_null());
-            WebPIDelete(idec);
-        }
+    fn test_dithering() {
+        let f = |c: &mut WebPDecoderConfig| {
+            c.options.dithering_strength = 50;
+            c.options.use_scaling = 0;
+            c.options.use_cropping = 0;
+            c.output.colorspace = MODE_RGBA;
+        };
+
+        test_image_content("./tests/alpha_color_cache.webp", &f, 17451511506666510217);
+        test_image_content("./tests/alpha_filter_0_method_0.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_filter_0_method_1.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_filter_1.webp", &f, 14567914834511743475);
+        test_image_content("./tests/alpha_filter_1_method_0.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_filter_1_method_1.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_filter_2.webp", &f, 14567914834511743475);
+        test_image_content("./tests/alpha_filter_2_method_0.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_filter_2_method_1.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_filter_3.webp", &f, 14567914834511743475);
+        test_image_content("./tests/alpha_filter_3_method_0.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_filter_3_method_1.webp", &f, 13612089935755543267);
+        test_image_content("./tests/alpha_no_compression.webp", &f, 14567914834511743475);
+        test_image_content("./tests/animated.webp", &f, 4);
+        test_image_content("./tests/bad_palette_index.webp", &f, 1090910947100558729);
+        test_image_content("./tests/big_endian_bug_393.webp", &f, 2980967713475538130);
+        test_image_content("./tests/bryce.webp", &f, 13020037970601992189);
+        test_image_content("./tests/bug3.webp", &f, 638443471448203063);
+        test_image_content("./tests/chip_lossless.webp", &f, 4);
+        test_image_content("./tests/chip_lossy.webp", &f, 4);
+        test_image_content("./tests/color_cache_bits_11.webp", &f, 9032696829302294085);
+        test_image_content("./tests/dual_transform.webp", &f, 13632087872546005697);
+        test_image_content("./tests/lossless1.webp", &f, 6665888316076904980);
+        test_image_content("./tests/lossless2.webp", &f, 6665888316076904980);
+        test_image_content("./tests/lossless3.webp", &f, 6665888316076904980);
+        test_image_content("./tests/lossless4.webp", &f, 9888661031943394232);
+        test_image_content("./tests/lossless_big_random_alpha.webp", &f, 7594911903621859128);
+        test_image_content("./tests/lossless_color_transform.webp", &f, 2948087899762506821);
+        test_image_content("./tests/lossless_vec_1_0.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_1.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_10.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_11.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_12.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_13.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_14.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_15.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_2.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_3.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_4.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_5.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_6.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_7.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_8.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_1_9.webp", &f, 17733108235855910246);
+        test_image_content("./tests/lossless_vec_2_0.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_1.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_10.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_11.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_12.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_13.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_14.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_15.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_2.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_3.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_4.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_5.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_6.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_7.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_8.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossless_vec_2_9.webp", &f, 1003123684174886669);
+        test_image_content("./tests/lossy_alpha1.webp", &f, 4663173370595833811);
+        test_image_content("./tests/lossy_alpha2.webp", &f, 13040174325108282556);
+        test_image_content("./tests/lossy_alpha3.webp", &f, 8910265089565344758);
+        test_image_content("./tests/lossy_alpha4.webp", &f, 6682460183289180607);
+        test_image_content("./tests/lossy_extreme_probabilities.webp", &f, 8869165650564247613);
+        test_image_content("./tests/lossy_q0_f100.webp", &f, 10222701466820955306);
+        test_image_content("./tests/near_lossless_75.webp", &f, 7530257669359192060);
+        test_image_content("./tests/one_color_no_palette.webp", &f, 9808690379913418648);
+        test_image_content("./tests/segment01.webp", &f, 6570607044180368746);
+        test_image_content("./tests/segment02.webp", &f, 6759032819078165028);
+        test_image_content("./tests/segment03.webp", &f, 14463606103756624804);
+        test_image_content("./tests/small_13x1.webp", &f, 17328207324203757418);
+        test_image_content("./tests/small_1x1.webp", &f, 8411948258449527475);
+        test_image_content("./tests/small_1x13.webp", &f, 17043210923847447474);
+        test_image_content("./tests/small_31x13.webp", &f, 17507625013798833325);
+        test_image_content("./tests/test-nostrong.webp", &f, 6824349801690322642);
+        test_image_content("./tests/test.webp", &f, 13413763509458305880);
+        test_image_content("./tests/very_short.webp", &f, 17231324244250450511);
+        test_image_content("./tests/vp80-00-comprehensive-001.webp", &f, 415183656836081989);
+        test_image_content("./tests/vp80-00-comprehensive-002.webp", &f, 14184125964389871461);
+        test_image_content("./tests/vp80-00-comprehensive-003.webp", &f, 9062867463768315371);
+        test_image_content("./tests/vp80-00-comprehensive-004.webp", &f, 415183656836081989);
+        test_image_content("./tests/vp80-00-comprehensive-005.webp", &f, 14458400196758366939);
+        test_image_content("./tests/vp80-00-comprehensive-006.webp", &f, 13723356361239798526);
+        test_image_content("./tests/vp80-00-comprehensive-007.webp", &f, 12293182613381521284);
+        test_image_content("./tests/vp80-00-comprehensive-008.webp", &f, 11820616399430363033);
+        test_image_content("./tests/vp80-00-comprehensive-009.webp", &f, 14267103081724255437);
+        test_image_content("./tests/vp80-00-comprehensive-010.webp", &f, 16919696639985199300);
+        test_image_content("./tests/vp80-00-comprehensive-011.webp", &f, 415183656836081989);
+        test_image_content("./tests/vp80-00-comprehensive-012.webp", &f, 5116002198453954719);
+        test_image_content("./tests/vp80-00-comprehensive-013.webp", &f, 17915879971369554602);
+        test_image_content("./tests/vp80-00-comprehensive-014.webp", &f, 17282421823304499997);
+        test_image_content("./tests/vp80-00-comprehensive-015.webp", &f, 8529179724445690373);
+        test_image_content("./tests/vp80-00-comprehensive-016.webp", &f, 261479151180380287);
+        test_image_content("./tests/vp80-00-comprehensive-017.webp", &f, 261479151180380287);
+        test_image_content("./tests/vp80-01-intra-1400.webp", &f, 3636119088663059664);
+        test_image_content("./tests/vp80-01-intra-1411.webp", &f, 12625967260415013799);
+        test_image_content("./tests/vp80-01-intra-1416.webp", &f, 18432705047646556864);
+        test_image_content("./tests/vp80-01-intra-1417.webp", &f, 18135104940564449767);
+        test_image_content("./tests/vp80-02-inter-1402.webp", &f, 3636119088663059664);
+        test_image_content("./tests/vp80-02-inter-1412.webp", &f, 12625967260415013799);
+        test_image_content("./tests/vp80-02-inter-1418.webp", &f, 14251556194460417820);
+        test_image_content("./tests/vp80-02-inter-1424.webp", &f, 4276127980433439213);
+        test_image_content("./tests/vp80-03-segmentation-1401.webp", &f, 3636119088663059664);
+        test_image_content("./tests/vp80-03-segmentation-1403.webp", &f, 3636119088663059664);
+        test_image_content("./tests/vp80-03-segmentation-1407.webp", &f, 4233602060963758568);
+        test_image_content("./tests/vp80-03-segmentation-1408.webp", &f, 4233602060963758568);
+        test_image_content("./tests/vp80-03-segmentation-1409.webp", &f, 4233602060963758568);
+        test_image_content("./tests/vp80-03-segmentation-1410.webp", &f, 4233602060963758568);
+        test_image_content("./tests/vp80-03-segmentation-1413.webp", &f, 12625967260415013799);
+        test_image_content("./tests/vp80-03-segmentation-1414.webp", &f, 10196755882640864001);
+        test_image_content("./tests/vp80-03-segmentation-1415.webp", &f, 10196755882640864001);
+        test_image_content("./tests/vp80-03-segmentation-1425.webp", &f, 6017331541839844920);
+        test_image_content("./tests/vp80-03-segmentation-1426.webp", &f, 9515310519083387731);
+        test_image_content("./tests/vp80-03-segmentation-1427.webp", &f, 456413958426692615);
+        test_image_content("./tests/vp80-03-segmentation-1432.webp", &f, 15795341873803524049);
+        test_image_content("./tests/vp80-03-segmentation-1435.webp", &f, 1415373690842442863);
+        test_image_content("./tests/vp80-03-segmentation-1436.webp", &f, 6411878774706275337);
+        test_image_content("./tests/vp80-03-segmentation-1437.webp", &f, 12248537304651518567);
+        test_image_content("./tests/vp80-03-segmentation-1441.webp", &f, 14012593689057580956);
+        test_image_content("./tests/vp80-03-segmentation-1442.webp", &f, 5265431174996979704);
+        test_image_content("./tests/vp80-04-partitions-1404.webp", &f, 3636119088663059664);
+        test_image_content("./tests/vp80-04-partitions-1405.webp", &f, 3636119088663059664);
+        test_image_content("./tests/vp80-04-partitions-1406.webp", &f, 3636119088663059664);
+        test_image_content("./tests/vp80-05-sharpness-1428.webp", &f, 10441263465703597084);
+        test_image_content("./tests/vp80-05-sharpness-1429.webp", &f, 15885055801945624629);
+        test_image_content("./tests/vp80-05-sharpness-1430.webp", &f, 2479647676023108526);
+        test_image_content("./tests/vp80-05-sharpness-1431.webp", &f, 14847741520843056888);
+        test_image_content("./tests/vp80-05-sharpness-1433.webp", &f, 6411878774706275337);
+        test_image_content("./tests/vp80-05-sharpness-1434.webp", &f, 1241115772363534854);
+        test_image_content("./tests/vp80-05-sharpness-1438.webp", &f, 17236961982664990239);
+        test_image_content("./tests/vp80-05-sharpness-1439.webp", &f, 18278078283735323454);
+        test_image_content("./tests/vp80-05-sharpness-1440.webp", &f, 6411878774706275337);
+        test_image_content("./tests/vp80-05-sharpness-1443.webp", &f, 4462861197001292528);
     }
 }
