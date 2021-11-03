@@ -3,7 +3,7 @@ use std::{convert::{TryFrom, TryInto}, fmt::Debug, ptr::{slice_from_raw_parts, s
 
 use libc::c_uint;
 
-use crate::{MODE_ARGB, MODE_Argb, MODE_BGR, MODE_BGRA, MODE_RGB, MODE_RGBA, MODE_RGBA_4444, MODE_RGB_565, MODE_bgrA, MODE_rgbA, MODE_rgbA_4444, yuv::vp8_yuv_to_rgba};
+use crate::{MODE_ARGB, MODE_Argb, MODE_BGR, MODE_BGRA, MODE_RGB, MODE_RGBA, MODE_RGBA_4444, MODE_RGB_565, MODE_bgrA, MODE_rgbA, MODE_rgbA_4444, yuv::{vp8_yuv_to_argb, vp8_yuv_to_bgr, vp8_yuv_to_bgra, vp8_yuv_to_rgb, vp8_yuv_to_rgb_565, vp8_yuv_to_rgba, vp8_yuv_to_rgba_4444}};
 
 // Given samples laid out in a square as:
 //  [a b]
@@ -137,7 +137,7 @@ struct YuvToBgraUpsampler {}
 impl FancyUpsampler for YuvToBgraUpsampler {
     type UpsampleDest = [u8; 4];
     fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 4]) {
-        todo!()
+        vp8_yuv_to_bgra(y, u, v, out)
     }
 }
 
@@ -161,7 +161,7 @@ struct YuvToRgbUpsampler {}
 impl FancyUpsampler for YuvToRgbUpsampler {
     type UpsampleDest = [u8; 3];
     fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 3]) {
-        todo!()
+        vp8_yuv_to_rgb(y, u, v, out)
     }
 }
 
@@ -169,7 +169,7 @@ struct YuvToBgrUpsampler {}
 impl FancyUpsampler for YuvToBgrUpsampler {
     type UpsampleDest = [u8; 3];
     fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 3]) {
-        todo!()
+        vp8_yuv_to_bgr(y, u, v, out)
     }
 }
 
@@ -185,7 +185,7 @@ struct YuvToArgbUpsampler {}
 impl FancyUpsampler for YuvToArgbUpsampler {
     type UpsampleDest = [u8; 4];
     fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 4]) {
-        todo!()
+        vp8_yuv_to_argb(y, u, v, out)
     }
 }
 
@@ -193,7 +193,7 @@ struct YuvToRgba4444Upsampler {}
 impl FancyUpsampler for YuvToRgba4444Upsampler {
     type UpsampleDest = [u8; 2];
     fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 2]) {
-        todo!()
+        vp8_yuv_to_rgba_4444(y, u, v, out);
     }
 }
 
@@ -201,7 +201,7 @@ struct YuvToRgb565Upsampler {}
 impl FancyUpsampler for YuvToRgb565Upsampler {
     type UpsampleDest = [u8; 2];
     fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 2]) {
-        todo!()
+        vp8_yuv_to_rgb_565(y, u, v, out);
     }
 }
 
@@ -286,17 +286,17 @@ unsafe extern "C" fn WebPInitUpsamplers() {
 
 #[no_mangle]
 pub static WebPUpsamplers: [unsafe extern "C" fn(*const u8, *const u8, *const u8, *const u8, *const u8, *const u8, *mut u8, *mut u8, u32); 13] = [
-    UpsampleRgbLinePair_C, //YuvToRgbUpsampler::ffi_upsample_line_pair,  // MODE_RGB
+    /*UpsampleRgbLinePair_C, */ YuvToRgbUpsampler::ffi_upsample_line_pair,  // MODE_RGB
     /*UpsampleRgbaLinePair_C, */ YuvToRgbaUpsampler::ffi_upsample_line_pair, // MODE_RGBA
-    UpsampleBgrLinePair_C, //YuvToBgrUpsampler::ffi_upsample_line_pair,  // MODE_BGR
-    UpsampleBgraLinePair_C, //YuvToBgraUpsampler::ffi_upsample_line_pair,  // MODE_BGRA
-    UpsampleArgbLinePair_C, //YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_ARGB
-    UpsampleRgba4444LinePair_C, //YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_RGBA_4444
-    UpsampleRgb565LinePair_C, // YuvToRgb565Upsampler::ffi_upsample_line_pair,  // MODE_RGB_565
+    /*UpsampleBgrLinePair_C, */ YuvToBgrUpsampler::ffi_upsample_line_pair,  // MODE_BGR
+    /*UpsampleBgraLinePair_C, */ YuvToBgraUpsampler::ffi_upsample_line_pair,  // MODE_BGRA
+    /*UpsampleArgbLinePair_C, */ YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_ARGB
+    /*UpsampleRgba4444LinePair_C, */ YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_RGBA_4444
+    /*UpsampleRgb565LinePair_C, */ YuvToRgb565Upsampler::ffi_upsample_line_pair,  // MODE_RGB_565
     /*UpsampleRgbaLinePair_C,*/ YuvToRgbaUpsampler::ffi_upsample_line_pair,  // MODE_rgbA
-    UpsampleBgraLinePair_C, // YuvToBgraUpsampler::ffi_upsample_line_pair, // MODE_bgrA
-    UpsampleArgbLinePair_C, //YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_Argb
-    UpsampleRgba4444LinePair_C, // YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_rgbA_4444
+    /*UpsampleBgraLinePair_C, */ YuvToBgraUpsampler::ffi_upsample_line_pair, // MODE_bgrA
+    /*UpsampleArgbLinePair_C, */ YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_Argb
+    /*UpsampleRgba4444LinePair_C, */ YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_rgbA_4444
     NotARealUpsampler::ffi_upsample_line_pair, // MODE_YUV
     NotARealUpsampler::ffi_upsample_line_pair, // MODE_YUVA
 ];
