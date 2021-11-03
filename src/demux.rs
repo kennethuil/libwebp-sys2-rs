@@ -315,7 +315,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "0_5", feature = "demux"))]
-    fn hash_animation(buf: &[u8]) -> u64 {
+    fn hash_animation<F>(buf: &[u8], f: &F) -> u64 where F: Fn(&mut WebPAnimDecoderOptions) {
         use siphasher::sip::SipHasher24;
         use std::hash::{Hasher};
         use std::mem;
@@ -324,6 +324,7 @@ mod tests {
         unsafe {
             let mut options = mem::zeroed();
             assert!(WebPAnimDecoderOptionsInit(&mut options) != 0);
+            f(&mut options);
 
             let data = WebPData {
                 bytes: buf.as_ptr(),
@@ -358,7 +359,7 @@ mod tests {
         hasher.finish()
     }
 
-    fn test_anim_content(filename: &str, expected_hash: u64) {
+    fn test_anim_content<F>(filename: &str, expected_hash: u64, f: &F) where F: Fn(&mut WebPAnimDecoderOptions) {
         use std::fs::File;
         use std::io::prelude::*;
         let mut buf = Vec::new();
@@ -367,152 +368,177 @@ mod tests {
             .read_to_end(&mut buf)
             .unwrap();
         assert!(len > 0);
-        let hash = hash_animation(&buf);
+        let hash = hash_animation(&buf, f);
         assert_eq!(expected_hash, hash, "hash mismatch in {}", filename);        
+    }
+
+    #[test]
+    fn test_bgrA() {
+        let f = |o: &mut WebPAnimDecoderOptions| {o.color_mode = MODE_bgrA;};
+        test_anim_content("./tests/chip_lossless.webp", 2075130756176543755, &f);
+        test_anim_content("./tests/chip_lossy.webp", 6955902631319670855, &f);
+        test_anim_content("./tests/alpha_no_compression.webp", 12061699193968689595, &f);       
+        test_anim_content("./tests/lossy_alpha1.webp", 12291741107973064377, &f);
+    }
+    #[test]
+    fn test_rgbA() {
+        let f = |o: &mut WebPAnimDecoderOptions| {o.color_mode = MODE_rgbA;};
+        test_anim_content("./tests/chip_lossless.webp", 12973136813834081985, &f);
+        test_anim_content("./tests/chip_lossy.webp", 12246682744563139019, &f);
+        test_anim_content("./tests/alpha_no_compression.webp", 1003779282449725241, &f);
+        test_anim_content("./tests/lossy_alpha1.webp", 13574948133336439503, &f);
+    }
+    #[test]
+    fn test_BGRA() {
+        let f = |o: &mut WebPAnimDecoderOptions| {o.color_mode = MODE_BGRA;};
+        test_anim_content("./tests/chip_lossless.webp", 2075130756176543755, &f);
+        test_anim_content("./tests/chip_lossy.webp", 6955902631319670855, &f);
+        test_anim_content("./tests/lossy_alpha1.webp", 3005511504114414934, &f);
     }
 
     #[test]
     #[cfg(all(feature = "0_5", feature = "demux"))]
     fn test_anim_decoder() {
+        let f = |_o: &mut WebPAnimDecoderOptions| {};
         // A short clip of my cat Chip, converted with ffmpeg
-        test_anim_content("./tests/chip_lossless.webp", 12973136813834081985);
-        test_anim_content("./tests/chip_lossy.webp", 12246682744563139019);
+        test_anim_content("./tests/chip_lossless.webp", 12973136813834081985, &f);
+        test_anim_content("./tests/chip_lossy.webp", 12246682744563139019, &f);
 
         // Taken from original libwebsys2 test image
-        test_anim_content("./tests/animated.webp", 11144901834580975337);
+        test_anim_content("./tests/animated.webp", 11144901834580975337, &f);
 
         // Taken from https://chromium.googlesource.com/webm/libwebp-test-data/
-        test_anim_content("./tests/alpha_color_cache.webp", 7139075528299486749);
-        test_anim_content("./tests/alpha_filter_0_method_0.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_filter_0_method_1.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_filter_1.webp", 11601176151118067127);
-        test_anim_content("./tests/alpha_filter_1_method_0.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_filter_1_method_1.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_filter_2.webp", 11601176151118067127);
-        test_anim_content("./tests/alpha_filter_2_method_0.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_filter_2_method_1.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_filter_3.webp", 11601176151118067127);
-        test_anim_content("./tests/alpha_filter_3_method_0.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_filter_3_method_1.webp", 269959336470181749);
-        test_anim_content("./tests/alpha_no_compression.webp", 11601176151118067127);
-        test_anim_content("./tests/bad_palette_index.webp", 3179927305885268547);
-        test_anim_content("./tests/big_endian_bug_393.webp", 15821156140267989026);
-        test_anim_content("./tests/bryce.webp", 2173216723474731973);
-        test_anim_content("./tests/bug3.webp", 16901908562088909750);
-        test_anim_content("./tests/color_cache_bits_11.webp", 15805786773633174689);
-        test_anim_content("./tests/dual_transform.webp", 18047906347243022880);
-        test_anim_content("./tests/lossless1.webp", 17768302409132818389);
-        test_anim_content("./tests/lossless2.webp", 17768302409132818389);
-        test_anim_content("./tests/lossless3.webp", 17768302409132818389);
-        test_anim_content("./tests/lossless4.webp", 16896323752254667796);
-        test_anim_content("./tests/lossless_big_random_alpha.webp", 8581210773495775950);
-        test_anim_content("./tests/lossless_color_transform.webp", 17741267576952510011);
-        test_anim_content("./tests/lossless_vec_1_0.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_1.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_10.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_11.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_12.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_13.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_14.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_15.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_2.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_3.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_4.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_5.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_6.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_7.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_8.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_1_9.webp", 11415221916290673081);
-        test_anim_content("./tests/lossless_vec_2_0.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_1.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_10.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_11.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_12.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_13.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_14.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_15.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_2.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_3.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_4.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_5.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_6.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_7.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_8.webp", 18285264984328656172);
-        test_anim_content("./tests/lossless_vec_2_9.webp", 18285264984328656172);
-        test_anim_content("./tests/lossy_alpha1.webp", 8114746806645667275);
-        test_anim_content("./tests/lossy_alpha2.webp", 15976630832270258083);
-        test_anim_content("./tests/lossy_alpha3.webp", 4395780881492938996);
-        test_anim_content("./tests/lossy_alpha4.webp", 1014717458192652218);
-        test_anim_content("./tests/lossy_extreme_probabilities.webp", 8920636990862365503);
-        test_anim_content("./tests/lossy_q0_f100.webp", 3966577919782747309);
-        test_anim_content("./tests/near_lossless_75.webp", 16825044650563630690);
-        test_anim_content("./tests/one_color_no_palette.webp", 12998824128782987327);
-        test_anim_content("./tests/segment01.webp", 15052450272839161463);
-        test_anim_content("./tests/segment02.webp", 14056791416036260084);
-        test_anim_content("./tests/segment03.webp", 8270799958870222402);
-        test_anim_content("./tests/small_13x1.webp", 1511617637893141007);
-        test_anim_content("./tests/small_1x1.webp", 7555012243442796334);
-        test_anim_content("./tests/small_1x13.webp", 12944935366533174067);
-        test_anim_content("./tests/small_31x13.webp", 10445038715640958683);
-        test_anim_content("./tests/test-nostrong.webp", 2541419939380451108);
-        test_anim_content("./tests/test.webp", 15805786773633174689);
-        test_anim_content("./tests/very_short.webp", 11089220480579370369);
-        test_anim_content("./tests/vp80-00-comprehensive-001.webp", 8922955068206135632);
-        test_anim_content("./tests/vp80-00-comprehensive-002.webp", 3996769244644888415);
-        test_anim_content("./tests/vp80-00-comprehensive-003.webp", 8980587458809154287);
-        test_anim_content("./tests/vp80-00-comprehensive-004.webp", 8922955068206135632);
-        test_anim_content("./tests/vp80-00-comprehensive-005.webp", 8770929085855477608);
-        test_anim_content("./tests/vp80-00-comprehensive-006.webp", 8757280669970610939);
-        test_anim_content("./tests/vp80-00-comprehensive-007.webp", 5890312307673978367);
-        test_anim_content("./tests/vp80-00-comprehensive-008.webp", 7990464531258155155);
-        test_anim_content("./tests/vp80-00-comprehensive-009.webp", 7422481547116844829);
-        test_anim_content("./tests/vp80-00-comprehensive-010.webp", 8076175088563676894);
-        test_anim_content("./tests/vp80-00-comprehensive-011.webp", 8922955068206135632);
-        test_anim_content("./tests/vp80-00-comprehensive-012.webp", 7857227984245784193);
-        test_anim_content("./tests/vp80-00-comprehensive-013.webp", 3633754347151800764);
-        test_anim_content("./tests/vp80-00-comprehensive-014.webp", 13748566424954352193);
-        test_anim_content("./tests/vp80-00-comprehensive-015.webp", 5620003810901009367);
-        test_anim_content("./tests/vp80-00-comprehensive-016.webp", 5056416415950061836);
-        test_anim_content("./tests/vp80-00-comprehensive-017.webp", 5056416415950061836);
-        test_anim_content("./tests/vp80-01-intra-1400.webp", 8224310502037935891);
-        test_anim_content("./tests/vp80-01-intra-1411.webp", 17587853229421624357);
-        test_anim_content("./tests/vp80-01-intra-1416.webp", 5493569529945269149);
-        test_anim_content("./tests/vp80-01-intra-1417.webp", 14121426666263385093);
-        test_anim_content("./tests/vp80-02-inter-1402.webp", 8224310502037935891);
-        test_anim_content("./tests/vp80-02-inter-1412.webp", 17587853229421624357);
-        test_anim_content("./tests/vp80-02-inter-1418.webp", 1804303511074854046);
-        test_anim_content("./tests/vp80-02-inter-1424.webp", 106984724960440457);
-        test_anim_content("./tests/vp80-03-segmentation-1401.webp", 8224310502037935891);
-        test_anim_content("./tests/vp80-03-segmentation-1403.webp", 8224310502037935891);
-        test_anim_content("./tests/vp80-03-segmentation-1407.webp", 18431957657024090961);
-        test_anim_content("./tests/vp80-03-segmentation-1408.webp", 18431957657024090961);
-        test_anim_content("./tests/vp80-03-segmentation-1409.webp", 18431957657024090961);
-        test_anim_content("./tests/vp80-03-segmentation-1410.webp", 18431957657024090961);
-        test_anim_content("./tests/vp80-03-segmentation-1413.webp", 17587853229421624357);
-        test_anim_content("./tests/vp80-03-segmentation-1414.webp", 18058704918143585599);
-        test_anim_content("./tests/vp80-03-segmentation-1415.webp", 18058704918143585599);
-        test_anim_content("./tests/vp80-03-segmentation-1425.webp", 15541210716571025647);
-        test_anim_content("./tests/vp80-03-segmentation-1426.webp", 9445883879984713016);
-        test_anim_content("./tests/vp80-03-segmentation-1427.webp", 13406639971166807563);
-        test_anim_content("./tests/vp80-03-segmentation-1432.webp", 1634009582774549850);
-        test_anim_content("./tests/vp80-03-segmentation-1435.webp", 9794906891697763636);
-        test_anim_content("./tests/vp80-03-segmentation-1436.webp", 7637298221140974699);
-        test_anim_content("./tests/vp80-03-segmentation-1437.webp", 7005631426988700615);
-        test_anim_content("./tests/vp80-03-segmentation-1441.webp", 6301413929326353435);
-        test_anim_content("./tests/vp80-03-segmentation-1442.webp", 13563681927532419514);
-        test_anim_content("./tests/vp80-04-partitions-1404.webp", 8224310502037935891);
-        test_anim_content("./tests/vp80-04-partitions-1405.webp", 8224310502037935891);
-        test_anim_content("./tests/vp80-04-partitions-1406.webp", 8224310502037935891);
-        test_anim_content("./tests/vp80-05-sharpness-1428.webp", 6369621127819382881);
-        test_anim_content("./tests/vp80-05-sharpness-1429.webp", 5736996487575508191);
-        test_anim_content("./tests/vp80-05-sharpness-1430.webp", 13927537323346367419);
-        test_anim_content("./tests/vp80-05-sharpness-1431.webp", 14288472789759021377);
-        test_anim_content("./tests/vp80-05-sharpness-1433.webp", 7637298221140974699);
-        test_anim_content("./tests/vp80-05-sharpness-1434.webp", 13643709644326139354);
-        test_anim_content("./tests/vp80-05-sharpness-1438.webp", 13962555527159636325);
-        test_anim_content("./tests/vp80-05-sharpness-1439.webp", 7684010787539890554);
-        test_anim_content("./tests/vp80-05-sharpness-1440.webp", 7637298221140974699);
-        test_anim_content("./tests/vp80-05-sharpness-1443.webp", 14626837624944389773);
+        test_anim_content("./tests/alpha_color_cache.webp", 7139075528299486749, &f);
+        test_anim_content("./tests/alpha_filter_0_method_0.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_filter_0_method_1.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_filter_1.webp", 11601176151118067127, &f);
+        test_anim_content("./tests/alpha_filter_1_method_0.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_filter_1_method_1.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_filter_2.webp", 11601176151118067127, &f);
+        test_anim_content("./tests/alpha_filter_2_method_0.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_filter_2_method_1.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_filter_3.webp", 11601176151118067127, &f);
+        test_anim_content("./tests/alpha_filter_3_method_0.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_filter_3_method_1.webp", 269959336470181749, &f);
+        test_anim_content("./tests/alpha_no_compression.webp", 11601176151118067127, &f);
+        test_anim_content("./tests/bad_palette_index.webp", 3179927305885268547, &f);
+        test_anim_content("./tests/big_endian_bug_393.webp", 15821156140267989026, &f);
+        test_anim_content("./tests/bryce.webp", 2173216723474731973, &f);
+        test_anim_content("./tests/bug3.webp", 16901908562088909750, &f);
+        test_anim_content("./tests/color_cache_bits_11.webp", 15805786773633174689, &f);
+        test_anim_content("./tests/dual_transform.webp", 18047906347243022880, &f);
+        test_anim_content("./tests/lossless1.webp", 17768302409132818389, &f);
+        test_anim_content("./tests/lossless2.webp", 17768302409132818389, &f);
+        test_anim_content("./tests/lossless3.webp", 17768302409132818389, &f);
+        test_anim_content("./tests/lossless4.webp", 16896323752254667796, &f);
+        test_anim_content("./tests/lossless_big_random_alpha.webp", 8581210773495775950, &f);
+        test_anim_content("./tests/lossless_color_transform.webp", 17741267576952510011, &f);
+        test_anim_content("./tests/lossless_vec_1_0.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_1.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_10.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_11.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_12.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_13.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_14.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_15.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_2.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_3.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_4.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_5.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_6.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_7.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_8.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_1_9.webp", 11415221916290673081, &f);
+        test_anim_content("./tests/lossless_vec_2_0.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_1.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_10.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_11.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_12.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_13.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_14.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_15.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_2.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_3.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_4.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_5.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_6.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_7.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_8.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossless_vec_2_9.webp", 18285264984328656172, &f);
+        test_anim_content("./tests/lossy_alpha1.webp", 8114746806645667275, &f);
+        test_anim_content("./tests/lossy_alpha2.webp", 15976630832270258083, &f);
+        test_anim_content("./tests/lossy_alpha3.webp", 4395780881492938996, &f);
+        test_anim_content("./tests/lossy_alpha4.webp", 1014717458192652218, &f);
+        test_anim_content("./tests/lossy_extreme_probabilities.webp", 8920636990862365503, &f);
+        test_anim_content("./tests/lossy_q0_f100.webp", 3966577919782747309, &f);
+        test_anim_content("./tests/near_lossless_75.webp", 16825044650563630690, &f);
+        test_anim_content("./tests/one_color_no_palette.webp", 12998824128782987327, &f);
+        test_anim_content("./tests/segment01.webp", 15052450272839161463, &f);
+        test_anim_content("./tests/segment02.webp", 14056791416036260084, &f);
+        test_anim_content("./tests/segment03.webp", 8270799958870222402, &f);
+        test_anim_content("./tests/small_13x1.webp", 1511617637893141007, &f);
+        test_anim_content("./tests/small_1x1.webp", 7555012243442796334, &f);
+        test_anim_content("./tests/small_1x13.webp", 12944935366533174067, &f);
+        test_anim_content("./tests/small_31x13.webp", 10445038715640958683, &f);
+        test_anim_content("./tests/test-nostrong.webp", 2541419939380451108, &f);
+        test_anim_content("./tests/test.webp", 15805786773633174689, &f);
+        test_anim_content("./tests/very_short.webp", 11089220480579370369, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-001.webp", 8922955068206135632, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-002.webp", 3996769244644888415, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-003.webp", 8980587458809154287, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-004.webp", 8922955068206135632, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-005.webp", 8770929085855477608, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-006.webp", 8757280669970610939, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-007.webp", 5890312307673978367, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-008.webp", 7990464531258155155, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-009.webp", 7422481547116844829, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-010.webp", 8076175088563676894, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-011.webp", 8922955068206135632, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-012.webp", 7857227984245784193, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-013.webp", 3633754347151800764, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-014.webp", 13748566424954352193, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-015.webp", 5620003810901009367, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-016.webp", 5056416415950061836, &f);
+        test_anim_content("./tests/vp80-00-comprehensive-017.webp", 5056416415950061836, &f);
+        test_anim_content("./tests/vp80-01-intra-1400.webp", 8224310502037935891, &f);
+        test_anim_content("./tests/vp80-01-intra-1411.webp", 17587853229421624357, &f);
+        test_anim_content("./tests/vp80-01-intra-1416.webp", 5493569529945269149, &f);
+        test_anim_content("./tests/vp80-01-intra-1417.webp", 14121426666263385093, &f);
+        test_anim_content("./tests/vp80-02-inter-1402.webp", 8224310502037935891, &f);
+        test_anim_content("./tests/vp80-02-inter-1412.webp", 17587853229421624357, &f);
+        test_anim_content("./tests/vp80-02-inter-1418.webp", 1804303511074854046, &f);
+        test_anim_content("./tests/vp80-02-inter-1424.webp", 106984724960440457, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1401.webp", 8224310502037935891, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1403.webp", 8224310502037935891, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1407.webp", 18431957657024090961, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1408.webp", 18431957657024090961, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1409.webp", 18431957657024090961, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1410.webp", 18431957657024090961, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1413.webp", 17587853229421624357, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1414.webp", 18058704918143585599, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1415.webp", 18058704918143585599, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1425.webp", 15541210716571025647, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1426.webp", 9445883879984713016, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1427.webp", 13406639971166807563, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1432.webp", 1634009582774549850, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1435.webp", 9794906891697763636, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1436.webp", 7637298221140974699, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1437.webp", 7005631426988700615, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1441.webp", 6301413929326353435, &f);
+        test_anim_content("./tests/vp80-03-segmentation-1442.webp", 13563681927532419514, &f);
+        test_anim_content("./tests/vp80-04-partitions-1404.webp", 8224310502037935891, &f);
+        test_anim_content("./tests/vp80-04-partitions-1405.webp", 8224310502037935891, &f);
+        test_anim_content("./tests/vp80-04-partitions-1406.webp", 8224310502037935891, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1428.webp", 6369621127819382881, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1429.webp", 5736996487575508191, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1430.webp", 13927537323346367419, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1431.webp", 14288472789759021377, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1433.webp", 7637298221140974699, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1434.webp", 13643709644326139354, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1438.webp", 13962555527159636325, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1439.webp", 7684010787539890554, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1440.webp", 7637298221140974699, &f);
+        test_anim_content("./tests/vp80-05-sharpness-1443.webp", 14626837624944389773, &f);
 
     }
 }
