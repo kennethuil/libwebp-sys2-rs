@@ -100,6 +100,25 @@ pub(crate) trait FancyUpsampler {
         }
     }
 
+    // We expect y, u, v to be of the same length, and dst to be that length multiplied by XSTEP
+    fn convert_yuv_444(y: &[u8], u: &[u8], v: &[u8], dst: &mut [u8]) where for <'a> &'a mut <Self as FancyUpsampler>::UpsampleDest: TryFrom<&'a mut [u8]> {
+        let dst_chunks = dst.chunks_exact_mut(Self::XSTEP);
+        for ((y, u), (v, dst)) in y.into_iter().zip(u.into_iter()).zip(v.into_iter().zip(dst_chunks.into_iter())) {
+            let dst = dst.try_into().unwrap_or_else(|_| panic!("nope"));
+            Self::upsample(*y, *u, *v, dst);
+        }
+    }
+
+    
+    unsafe extern "C" fn ffi_convert_yuv_444(y: *const u8, u: *const u8, v: *const u8, dst: *mut u8, len: c_uint) where for <'a> &'a mut <Self as FancyUpsampler>::UpsampleDest: TryFrom<&'a mut [u8]> {
+        let len = len as usize;
+        let y = slice::from_raw_parts(y, len);
+        let u = slice::from_raw_parts(u, len);
+        let v = slice::from_raw_parts(v, len);
+        let dst = slice::from_raw_parts_mut(dst, len * Self::XSTEP);
+        Self::convert_yuv_444(y, u, v, dst);
+    }
+
     unsafe extern "C" fn ffi_upsample_line_pair(top_y: *const u8, bottom_y: *const u8,
         top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
         top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint) where for <'a> &'a mut <Self as FancyUpsampler>::UpsampleDest: TryFrom<&'a mut [u8]> {
@@ -121,6 +140,13 @@ pub(crate) trait FancyUpsampler {
         };
         Self::do_upsample_line_pair(s_top_y, s_bottom, s_top_u, s_top_v, s_cur_u, s_cur_v, s_top_dst, s_len);
     }
+
+    unsafe extern "C" fn ffi_upsample(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) where for <'a> &'a mut <Self as FancyUpsampler>::UpsampleDest: TryFrom<&'a mut [u8]> {
+        let out = slice::from_raw_parts_mut(out, Self::XSTEP);
+        let out = out.try_into().unwrap_or_else(|_| panic!("nope"));
+        Self::upsample(y as u8, u as u8, v as u8, out);
+    }
+    //fn upsample(y: u8, u: u8, v: u8, out: &mut Self::UpsampleDest);
 }
 
 // All variants implemented
@@ -132,6 +158,7 @@ impl FancyUpsampler for YuvToRgbaUpsampler {
         vp8_yuv_to_rgba(y, u, v, out)
     }
 }
+
 
 struct YuvToBgraUpsampler {}
 impl FancyUpsampler for YuvToBgraUpsampler {
@@ -260,29 +287,15 @@ extern "C" {
         top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
 }
 
-/*
-extern "C" {
-    pub static mut WebPUpsamplers: [unsafe extern "C" fn(*const u8, *const u8, *const u8, *const u8, *const u8, *const u8, *mut u8, *mut u8, u32); 13];
-}
-*/
-
 #[no_mangle]
 unsafe extern "C" fn WebPInitUpsamplers() {
-/* 
-    WebPUpsamplers[MODE_RGBA as usize]      = YuvToRgbaUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_BGRA as usize]      = YuvToBgraUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_rgbA as usize]      = YuvToRgbaUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_bgrA as usize]      = YuvToBgraUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_RGB as usize]       = YuvToRgbUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_BGR as usize]       = YuvToBgrUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_ARGB as usize]      = YuvToArgbUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_RGBA_4444 as usize] = YuvToRgba4444Upsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_RGB_565 as usize]   = YuvToRgb565Upsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_Argb as usize]      = YuvToArgbUpsampler::ffi_upsample_line_pair;
-    WebPUpsamplers[MODE_rgbA_4444 as usize] = YuvToRgba4444Upsampler::ffi_upsample_line_pair;
-    */
+
 }
 
+#[no_mangle]
+unsafe extern "C" fn WebPInitYUV444Converters() {
+
+}
 
 #[no_mangle]
 pub static WebPUpsamplers: [unsafe extern "C" fn(*const u8, *const u8, *const u8, *const u8, *const u8, *const u8, *mut u8, *mut u8, u32); 13] = [
@@ -301,3 +314,54 @@ pub static WebPUpsamplers: [unsafe extern "C" fn(*const u8, *const u8, *const u8
     NotARealUpsampler::ffi_upsample_line_pair, // MODE_YUVA
 ];
 
+#[no_mangle]
+pub static WebPYUV444Converters: [unsafe extern "C" fn(y: *const u8, u: *const u8, v: *const u8, dst: *mut u8, len: c_uint); 13] = [
+    YuvToRgbUpsampler::ffi_convert_yuv_444,  // MODE_RGB
+    YuvToRgbaUpsampler::ffi_convert_yuv_444, // MODE_RGBA
+    YuvToBgrUpsampler::ffi_convert_yuv_444,  // MODE_BGR
+    YuvToBgraUpsampler::ffi_convert_yuv_444,  // MODE_BGRA
+    YuvToArgbUpsampler::ffi_convert_yuv_444,  // MODE_ARGB
+    YuvToRgba4444Upsampler::ffi_convert_yuv_444, // MODE_RGBA_4444
+    YuvToRgb565Upsampler::ffi_convert_yuv_444,  // MODE_RGB_565
+    YuvToRgbaUpsampler::ffi_convert_yuv_444,  // MODE_rgbA
+    YuvToBgraUpsampler::ffi_convert_yuv_444, // MODE_bgrA
+    YuvToArgbUpsampler::ffi_convert_yuv_444,  // MODE_Argb
+    YuvToRgba4444Upsampler::ffi_convert_yuv_444, // MODE_rgbA_4444
+    NotARealUpsampler::ffi_convert_yuv_444, // MODE_YUV
+    NotARealUpsampler::ffi_convert_yuv_444, // MODE_YUVA
+];
+
+#[no_mangle]
+unsafe extern "C" fn VP8YuvToRgba(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) {
+    YuvToRgbaUpsampler::ffi_upsample(y, u, v, out);
+}
+
+#[no_mangle]
+unsafe extern "C" fn VP8YuvToBgra(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) {
+    YuvToBgraUpsampler::ffi_upsample(y, u, v, out);
+}
+
+#[no_mangle]
+unsafe extern "C" fn VP8YuvToArgb(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) {
+    YuvToArgbUpsampler::ffi_upsample(y, u, v, out);
+}
+
+#[no_mangle]
+unsafe extern "C" fn VP8YuvToRgba4444(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) {
+    YuvToRgba4444Upsampler::ffi_upsample(y, u, v, out);
+}
+
+#[no_mangle]
+unsafe extern "C" fn VP8YuvToRgb565(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) {
+    YuvToRgb565Upsampler::ffi_upsample(y, u, v, out);
+}
+
+#[no_mangle]
+unsafe extern "C" fn VP8YuvToBgr(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) {
+    YuvToBgrUpsampler::ffi_upsample(y, u, v, out);
+}
+
+#[no_mangle]
+unsafe extern "C" fn VP8YuvToRgb(y: c_uint, u: c_uint, v: c_uint, out: *mut u8) {
+    YuvToRgbUpsampler::ffi_upsample(y, u, v, out);
+}

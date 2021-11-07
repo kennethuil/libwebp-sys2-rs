@@ -22,12 +22,6 @@
 #ifdef FANCY_UPSAMPLING
 
 
-void VP8YuvToRgba(uint8_t y, uint8_t u, uint8_t v,
-                                     uint8_t* const rgba) {
-  VP8YuvToRgb(y, u, v, rgba);
-  rgba[3] = 0xff;
-}
-
 // Fancy upsampling functions to convert YUV to RGB
 WebPUpsampleLinePairFunc WebPUpsamplers[MODE_LAST];
 
@@ -223,7 +217,8 @@ static void EmptyYuv444Func(const uint8_t* y,
 #undef YUV444_FUNC
 
 WebPYUV444Converter WebPYUV444Converters[MODE_LAST];
-
+void WebPInitYUV444Converters(void);
+/*
 extern void WebPInitYUV444ConvertersMIPSdspR2(void);
 extern void WebPInitYUV444ConvertersSSE2(void);
 extern void WebPInitYUV444ConvertersSSE41(void);
@@ -240,7 +235,6 @@ WEBP_DSP_INIT_FUNC(WebPInitYUV444Converters) {
   WebPYUV444Converters[MODE_bgrA]      = WebPYuv444ToBgra_C;
   WebPYUV444Converters[MODE_Argb]      = WebPYuv444ToArgb_C;
   WebPYUV444Converters[MODE_rgbA_4444] = WebPYuv444ToRgba4444_C;
-/*
   if (VP8GetCPUInfo != NULL) {
 #if defined(WEBP_USE_SSE2)
     if (VP8GetCPUInfo(kSSE2)) {
@@ -258,9 +252,9 @@ WEBP_DSP_INIT_FUNC(WebPInitYUV444Converters) {
     }
 #endif
   }
-  */
+  
 }
-
+*/
 //------------------------------------------------------------------------------
 // Main calls
 

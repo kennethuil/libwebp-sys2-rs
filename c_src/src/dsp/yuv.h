@@ -76,22 +76,23 @@ static WEBP_INLINE int VP8YUVToB(int y, int u) {
   return VP8Clip8(MultHi(y, 19077) + MultHi(u, 33050) - 17685);
 }
 
-static WEBP_INLINE void VP8YuvToRgb(int y, int u, int v,
-                                    uint8_t* const rgb) {
+void VP8YuvToRgb(int y, int u, int v,
+                                    uint8_t* const rgb); /* {
   rgb[0] = VP8YUVToR(y, v);
   rgb[1] = VP8YUVToG(y, u, v);
   rgb[2] = VP8YUVToB(y, u);
 }
-
-static WEBP_INLINE void VP8YuvToBgr(int y, int u, int v,
-                                    uint8_t* const bgr) {
+*/
+void VP8YuvToBgr(int y, int u, int v,
+                                    uint8_t* const bgr); /* {
   bgr[0] = VP8YUVToB(y, u);
   bgr[1] = VP8YUVToG(y, u, v);
   bgr[2] = VP8YUVToR(y, v);
 }
+*/
 
-static WEBP_INLINE void VP8YuvToRgb565(int y, int u, int v,
-                                       uint8_t* const rgb) {
+void VP8YuvToRgb565(int y, int u, int v,
+                                       uint8_t* const rgb); /* {
   const int r = VP8YUVToR(y, v);      // 5 usable bits
   const int g = VP8YUVToG(y, u, v);   // 6 usable bits
   const int b = VP8YUVToB(y, u);      // 5 usable bits
@@ -105,9 +106,10 @@ static WEBP_INLINE void VP8YuvToRgb565(int y, int u, int v,
   rgb[1] = gb;
 #endif
 }
+*/
 
-static WEBP_INLINE void VP8YuvToRgba4444(int y, int u, int v,
-                                         uint8_t* const argb) {
+void VP8YuvToRgba4444(int y, int u, int v,
+                                         uint8_t* const argb); /* {
   const int r = VP8YUVToR(y, v);        // 4 usable bits
   const int g = VP8YUVToG(y, u, v);     // 4 usable bits
   const int b = VP8YUVToB(y, u);        // 4 usable bits
@@ -121,24 +123,27 @@ static WEBP_INLINE void VP8YuvToRgba4444(int y, int u, int v,
   argb[1] = ba;
 #endif
 }
+*/
 
 //-----------------------------------------------------------------------------
 // Alpha handling variants
 
-static WEBP_INLINE void VP8YuvToArgb(uint8_t y, uint8_t u, uint8_t v,
-                                     uint8_t* const argb) {
+void VP8YuvToArgb(uint8_t y, uint8_t u, uint8_t v,
+                                     uint8_t* const argb); /* {
   argb[0] = 0xff;
   VP8YuvToRgb(y, u, v, argb + 1);
 }
+*/
 
-static WEBP_INLINE void VP8YuvToBgra(uint8_t y, uint8_t u, uint8_t v,
-                                     uint8_t* const bgra) {
+void VP8YuvToBgra(uint8_t y, uint8_t u, uint8_t v,
+                                     uint8_t* const bgra); /* {
   VP8YuvToBgr(y, u, v, bgra);
   bgra[3] = 0xff;
 }
+*/
 
-//void VP8YuvToRgba(uint8_t y, uint8_t u, uint8_t v,
- //                                    uint8_t* const rgba);
+void VP8YuvToRgba(uint8_t y, uint8_t u, uint8_t v,
+                                    uint8_t* const rgba);
 
 //-----------------------------------------------------------------------------
 // SSE2 extra functions (mostly for upsampling_sse2.c)
