@@ -146,10 +146,7 @@ pub(crate) trait FancyUpsampler {
         let out = out.try_into().unwrap_or_else(|_| panic!("nope"));
         Self::upsample(y as u8, u as u8, v as u8, out);
     }
-    //fn upsample(y: u8, u: u8, v: u8, out: &mut Self::UpsampleDest);
 }
-
-// All variants implemented
 
 struct YuvToRgbaUpsampler {}
 impl FancyUpsampler for YuvToRgbaUpsampler {
@@ -168,22 +165,6 @@ impl FancyUpsampler for YuvToBgraUpsampler {
     }
 }
 
-struct YuvToRgbaPremultipliedUpsampler {}
-impl FancyUpsampler for YuvToRgbaPremultipliedUpsampler {
-    type UpsampleDest = [u8; 4];
-    fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 4]) {
-        todo!()
-    }
-}
-
-struct YuvToBgraPremultipliedUpsampler {}
-impl FancyUpsampler for YuvToBgraPremultipliedUpsampler {
-    type UpsampleDest = [u8; 4];
-    fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 4]) {
-        todo!()
-    }
-}
-
 struct YuvToRgbUpsampler {}
 impl FancyUpsampler for YuvToRgbUpsampler {
     type UpsampleDest = [u8; 3];
@@ -197,14 +178,6 @@ impl FancyUpsampler for YuvToBgrUpsampler {
     type UpsampleDest = [u8; 3];
     fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 3]) {
         vp8_yuv_to_bgr(y, u, v, out)
-    }
-}
-
-struct YuvToBgrPremultipliedUpsampler {}
-impl FancyUpsampler for YuvToBgrPremultipliedUpsampler {
-    type UpsampleDest = [u8; 3];
-    fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 3]) {
-        todo!()
     }
 }
 
@@ -232,59 +205,12 @@ impl FancyUpsampler for YuvToRgb565Upsampler {
     }
 }
 
-struct YuvToArgbPremultipledUpsampler {}
-impl FancyUpsampler for YuvToArgbPremultipledUpsampler {
-    type UpsampleDest = [u8; 4];
-    fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 4]) {
-        todo!()
-    }
-}
-
-struct YuvToRgbaPremultipled4444Upsampler {}
-impl FancyUpsampler for YuvToRgbaPremultipled4444Upsampler {
-    type UpsampleDest = [u8; 2];
-    fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 2]) {
-        todo!()
-    }
-}
-
 struct NotARealUpsampler {}
 impl FancyUpsampler for NotARealUpsampler {
     type UpsampleDest = [u8; 4];
-    fn upsample(y: u8, u: u8, v: u8, out: &mut [u8; 4]) {
-        todo!()
+    fn upsample(_y: u8, _u: u8, _v: u8, _out: &mut [u8; 4]) {
+        unimplemented!()
     } 
-}
-
-
-extern "C" {
-    fn UpsampleRgbLinePair_C(top_y: *const u8, bottom_y: *const u8,
-        top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
-        top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
-
-    fn UpsampleBgrLinePair_C(top_y: *const u8, bottom_y: *const u8,
-        top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
-        top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
-
-    fn UpsampleBgraLinePair_C(top_y: *const u8, bottom_y: *const u8,
-        top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
-        top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
-
-    fn UpsampleArgbLinePair_C(top_y: *const u8, bottom_y: *const u8,
-        top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
-        top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
-
-    fn UpsampleRgba4444LinePair_C(top_y: *const u8, bottom_y: *const u8,
-        top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
-        top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
-
-    fn UpsampleRgb565LinePair_C(top_y: *const u8, bottom_y: *const u8,
-        top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
-        top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
-
-    fn UpsampleRgbaLinePair_C(top_y: *const u8, bottom_y: *const u8,
-        top_u: *const u8, top_v: *const u8, cur_u: *const u8, cur_v: *const u8,
-        top_dst: *mut u8, bottom_dst: *mut u8, len: c_uint);
 }
 
 #[no_mangle]
@@ -299,17 +225,17 @@ unsafe extern "C" fn WebPInitYUV444Converters() {
 
 #[no_mangle]
 pub static WebPUpsamplers: [unsafe extern "C" fn(*const u8, *const u8, *const u8, *const u8, *const u8, *const u8, *mut u8, *mut u8, u32); 13] = [
-    /*UpsampleRgbLinePair_C, */ YuvToRgbUpsampler::ffi_upsample_line_pair,  // MODE_RGB
-    /*UpsampleRgbaLinePair_C, */ YuvToRgbaUpsampler::ffi_upsample_line_pair, // MODE_RGBA
-    /*UpsampleBgrLinePair_C, */ YuvToBgrUpsampler::ffi_upsample_line_pair,  // MODE_BGR
-    /*UpsampleBgraLinePair_C, */ YuvToBgraUpsampler::ffi_upsample_line_pair,  // MODE_BGRA
-    /*UpsampleArgbLinePair_C, */ YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_ARGB
-    /*UpsampleRgba4444LinePair_C, */ YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_RGBA_4444
-    /*UpsampleRgb565LinePair_C, */ YuvToRgb565Upsampler::ffi_upsample_line_pair,  // MODE_RGB_565
-    /*UpsampleRgbaLinePair_C,*/ YuvToRgbaUpsampler::ffi_upsample_line_pair,  // MODE_rgbA
-    /*UpsampleBgraLinePair_C, */ YuvToBgraUpsampler::ffi_upsample_line_pair, // MODE_bgrA
-    /*UpsampleArgbLinePair_C, */ YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_Argb
-    /*UpsampleRgba4444LinePair_C, */ YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_rgbA_4444
+    YuvToRgbUpsampler::ffi_upsample_line_pair,  // MODE_RGB
+    YuvToRgbaUpsampler::ffi_upsample_line_pair, // MODE_RGBA
+    YuvToBgrUpsampler::ffi_upsample_line_pair,  // MODE_BGR
+    YuvToBgraUpsampler::ffi_upsample_line_pair,  // MODE_BGRA
+    YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_ARGB
+    YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_RGBA_4444
+    YuvToRgb565Upsampler::ffi_upsample_line_pair,  // MODE_RGB_565
+    YuvToRgbaUpsampler::ffi_upsample_line_pair,  // MODE_rgbA
+    YuvToBgraUpsampler::ffi_upsample_line_pair, // MODE_bgrA
+    YuvToArgbUpsampler::ffi_upsample_line_pair,  // MODE_Argb
+    YuvToRgba4444Upsampler::ffi_upsample_line_pair, // MODE_rgbA_4444
     NotARealUpsampler::ffi_upsample_line_pair, // MODE_YUV
     NotARealUpsampler::ffi_upsample_line_pair, // MODE_YUVA
 ];
